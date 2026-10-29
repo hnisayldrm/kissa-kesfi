@@ -20,7 +20,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-<!-- Kıssa Keşfi: Skor Yönetimi ve Firebase Entegrasyonu -->
+    <!-- Kıssa Keşfi: Skor Yönetimi ve Firebase Entegrasyonu -->
     <script>
         // Global Durum Değişkenleri
         window.globalScoresList = [];
@@ -66,10 +66,10 @@
             return localDateKey(yesterday);
         }
 
-    function getYesterdayFormattedDate() {
+        function getYesterdayFormattedDate() {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
-            return yesterday.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' }); // Örn: "29 Ekim"
+            return yesterday.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
         }
 
         function updateYesterdayWinnerUI() {
@@ -85,13 +85,12 @@
             const yesterdayKey = getYesterdayDateKey();
 
             // 1. Dünün skorlarını ara
-            let targetScores = allScores.filter(item => item.dateKey === scraperKey);
-            let labelText = getYesterdayFormattedDate(); // 👈 "Dün" yerine dinamik tarih (Örn: 29 Ekim) yazar
+            let targetScores = allScores.filter(item => item.dateKey === yesterdayKey);
+            let labelText = getYesterdayFormattedDate();
 
-            // 2. Düne ait kayıt yoksa genel listedeki en yüksek skorlu kişiyi al
+            // 2. Düne ait kayıt yoksa genel listeden en yüksek skorlu kişiyi al
             if (targetScores.length === 0) {
                 targetScores = [...allScores];
-                labelText = 'Son Şampiyon';
             }
 
             const topWinner = targetScores.sort((a, b) => Number(b.score) - Number(a.score))[0];
@@ -264,90 +263,6 @@
 
         window.addEventListener('DOMContentLoaded', initLiveLeaderboardSync);
     </script>
-            if (tab === 'daily') {
-                btnDaily.className = "px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow-md transition-colors";
-                btnAll.className = "px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors";
-            } else {
-                btnAll.className = "px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow-md transition-colors";
-                btnDaily.className = "px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors";
-            }
-            renderLeaderboardTable();
-        }
-
-        function saveScoreToLeaderboard(name, scoreVal, correct, total, mode) {
-            if (typeof window.saveScoreToCloud === 'function') {
-                window.saveScoreToCloud(name, scoreVal, correct, total, mode);
-            }
-        }
-
-        function renderLeaderboardTable() {
-            const list = getLeaderboard();
-            const tbody = document.getElementById('leaderboardTableBody');
-            const noMsg = document.getElementById('noLeaderboardMsg');
-            tbody.innerHTML = '';
-
-            if (!list || list.length === 0) {
-                noMsg.classList.remove('hidden');
-                return;
-            }
-
-            noMsg.classList.add('hidden');
-
-            list.slice(0, 30).forEach((item, index) => {
-                const tr = document.createElement('tr');
-                tr.className = index % 2 === 0 ? 'bg-slate-900/60' : 'bg-slate-800/40';
-
-                let medal = `${index + 1}`;
-                if (index === 0) medal = `<i class="fa-solid fa-medal text-amber-400 text-base"></i>`;
-                else if (index === 1) medal = `<i class="fa-solid fa-medal text-slate-300 text-base"></i>`;
-                else if (index === 2) medal = `<i class="fa-solid fa-medal text-amber-600 text-base"></i>`;
-
-                tr.innerHTML = `
-                    <td class="py-3 px-3 font-bold text-center">${medal}</td>
-                    <td class="py-3 px-3 font-bold text-white flex items-center space-x-1.5">
-                        <span>${item.name}</span>
-                        ${index === 0 ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">1. Sıra</span>' : ''}
-                    </td>
-                    <td class="py-3 px-3 font-extrabold text-amber-300">${item.score}</td>
-                    <td class="py-3 px-3 text-emerald-400 font-semibold">${item.correct}</td>
-                    <td class="py-3 px-3 text-slate-400">${item.mode || 'Test'}</td>
-                    <td class="py-3 px-3 text-slate-500 text-[11px]">${item.dateStr || ''}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-
-        window.renderLeaderboardTable = renderLeaderboardTable;
-
-        function openLeaderboardModal() {
-            window.isLeaderboardModalOpen = true;
-            renderLeaderboardTable();
-            document.getElementById('leaderboardModal').classList.remove('hidden');
-        }
-
-        function closeLeaderboardModal() {
-            window.isLeaderboardModalOpen = false;
-            document.getElementById('leaderboardModal').classList.add('hidden');
-        }
-
-        function clearLeaderboard() {
-            if (typeof window.clearCloudLeaderboard === 'function') {
-                window.clearCloudLeaderboard();
-            }
-        }
-
-        tailwind = {
-            config: {
-                theme: {
-                    extend: {
-                        colors: {
-                            slate: { 850: '#131f37' }
-                        }
-                    }
-                }
-            }
-        };
-    </script>
     <style>
         .custom-glow { box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.3); }
         .card-flip { perspective: 1000px; }
@@ -419,25 +334,27 @@
                     Adem (as)'dan İbrahim (as)'a, ibret dolu Peygamber kıssalarını öğrenin, bilgilerinizi test edin!
                 </p>
             </div>
-<!-- Dünün Şampiyonu Panosu (Kıssa Keşfi) -->
-<div id="yesterdayWinnerCard" class="hidden bg-gradient-to-r from-amber-500/20 via-slate-800 to-amber-600/20 border border-amber-400/50 rounded-2xl p-4 max-w-xl mx-auto text-left shadow-lg backdrop-blur-sm">
-    <div class="flex items-center space-x-4">
-        <div class="w-12 h-12 rounded-full bg-amber-400/20 border border-amber-400/50 flex items-center justify-center text-amber-300 text-2xl shrink-0">
-            <i class="fa-solid fa-crown"></i>
-        </div>
-        <div class="flex-grow">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-black uppercase tracking-wider text-amber-300">👑 Dünün Şampiyonu</span>
-                <span id="winnerDate" class="text-[10px] text-slate-400 font-semibold">--</span>
+
+            <!-- Dünün Şampiyonu Panosu (Kıssa Keşfi) -->
+            <div id="yesterdayWinnerCard" class="hidden bg-gradient-to-r from-amber-500/20 via-slate-800 to-amber-600/20 border border-amber-400/50 rounded-2xl p-4 max-w-xl mx-auto text-left shadow-lg backdrop-blur-sm">
+                <div class="flex items-center space-x-4">
+                    <div class="w-12 h-12 rounded-full bg-amber-400/20 border border-amber-400/50 flex items-center justify-center text-amber-300 text-2xl shrink-0">
+                        <i class="fa-solid fa-crown"></i>
+                    </div>
+                    <div class="flex-grow">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-black uppercase tracking-wider text-amber-300">👑 Dünün Şampiyonu</span>
+                            <span id="winnerDate" class="text-[10px] text-slate-400 font-semibold">--</span>
+                        </div>
+                        <div class="flex items-baseline space-x-2 mt-0.5">
+                            <h4 id="winnerName" class="text-base font-black text-white">Yükleniyor...</h4>
+                            <span id="winnerScore" class="text-xs font-bold text-amber-300">0 Puan</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 mt-0.5">Dün en yüksek skoru alarak zirveye oturdu!</p>
+                    </div>
+                </div>
             </div>
-            <div class="flex items-baseline space-x-2 mt-0.5">
-                <h4 id="winnerName" class="text-base font-black text-white">Yükleniyor...</h4>
-                <span id="winnerScore" class="text-xs font-bold text-amber-300">0 Puan</span>
-            </div>
-            <p class="text-[11px] text-slate-300 mt-0.5">Dün en yüksek skoru alarak zirveye oturdu!</p>
-        </div>
-    </div>
-</div>
+
             <!-- Player Name Registration Card -->
             <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 max-w-xl mx-auto text-left space-y-3 shadow-xl">
                 <div class="flex items-center justify-between">
@@ -447,7 +364,6 @@
                     </label>
                 </div>
 
-                <!-- Input Field (İsmatör kaldırıldı) -->
                 <div class="space-y-2">
                     <div class="relative">
                         <input type="text" id="playerNameInput" placeholder="İsminizi yazınız..." maxlength="25" class="w-full bg-slate-900 border border-slate-600 focus:border-emerald-500 rounded-xl px-4 py-3 text-slate-100 font-semibold placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-sm transition-all" />
@@ -585,7 +501,6 @@
                     </h3>
                 </div>
 
-                <!-- Multiple Choice Options Grid -->
                 <div id="optionsContainer" class="grid grid-cols-1 gap-3 pt-2">
                     <!-- Dynamic Options -->
                 </div>
@@ -608,7 +523,6 @@
 
             <!-- MODE 2: TABU FLASHCARD CONTAINER -->
             <div id="cardQuestionContainer" class="hidden space-y-6">
-                <!-- Pass status bar -->
                 <div class="flex items-center justify-between bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700">
                     <div class="flex items-center space-x-2">
                         <i class="fa-solid fa-ticket text-amber-400"></i>
@@ -871,7 +785,6 @@
 
     <!-- Quiz Dataset & Logic -->
     <script>
-        // CLEAN DATASET (Tabu kaldırıldı)
         const questionsData = [
             {
                 id: 1,
@@ -1131,18 +1044,17 @@
         let currentQuestionIndex = 0;
         let score = 0;
         let streak = 0;
-        let passRights = 3; // 3 Pass rights for Card mode
+        let passRights = 3;
         let correctAnswersCount = 0;
         let isAnswered = false;
         let cardFlipped = false;
 
         // Timer System Variables
-        let timerDuration = 20; // Default 20 seconds for Test mode
+        let timerDuration = 20;
         let currentSecondsLeft = 20;
         let timerInterval = null;
-        let userAnswersLog = []; // For End Game Review
+        let userAnswersLog = [];
 
-        // Timer Duration Selection
         function setTimerDuration(seconds) {
             timerDuration = seconds;
             document.getElementById('timerValLabel').innerText = `${seconds} Saniye`;
@@ -1158,7 +1070,6 @@
 
         function startTimer() {
             stopTimer();
-            // Test modunda seçilen süre, Kartlar modunda ise sabit 60 saniye uygulanır
             currentSecondsLeft = currentGameMode === 'card' ? 60 : timerDuration;
             updateTimerUI();
 
@@ -1203,7 +1114,6 @@
             }
         }
 
-        // Shuffle Array
         function shuffleArray(array) {
             const arr = [...array];
             for (let i = arr.length - 1; i > 0; i--) {
@@ -1213,7 +1123,6 @@
             return arr;
         }
 
-        // Shuffled Question Set for Current Session
         let shuffledQuestions = [];
 
         function startGame(mode) {
@@ -1238,7 +1147,6 @@
             correctAnswersCount = 0;
             userAnswersLog = [];
 
-            // Shuffle full set for fresh order every play
             shuffledQuestions = shuffleArray(questionsData);
 
             document.getElementById('welcomeScreen').classList.add('hidden');
@@ -1272,7 +1180,6 @@
             cardFlipped = false;
             const q = shuffledQuestions[currentQuestionIndex];
 
-            // Progress Indicators
             const progressPct = ((currentQuestionIndex + 1) / shuffledQuestions.length) * 100;
             document.getElementById('progressBar').style.width = `${progressPct}%`;
             document.getElementById('currentQNum').innerText = currentQuestionIndex + 1;
@@ -1283,7 +1190,6 @@
                 document.getElementById('questionText').innerText = q.question;
                 document.getElementById('feedbackBanner').classList.add('hidden');
 
-                // Shuffle Options dynamically
                 const allOpts = shuffleArray([
                     { text: q.correct, isCorrect: true },
                     ...q.distractors.map(d => ({ text: d, isCorrect: false }))
@@ -1306,7 +1212,6 @@
 
                 startTimer();
             } else {
-                // Card Mode
                 document.getElementById('cardQuestionText').innerText = q.question;
                 document.getElementById('cardAnswerText').innerText = q.correct;
                 document.getElementById('flashCardInner').classList.remove('flipped');
@@ -1398,7 +1303,6 @@
                 document.getElementById('feedbackTitle').innerText = "Süreniz Doldu!";
                 document.getElementById('feedbackDetail').innerText = `Doğru cevap: ${qObj.correct}`;
             } else {
-                // Flashcard timeout
                 flipCard();
             }
         }
@@ -1470,10 +1374,10 @@
             document.getElementById('finalCorrect').innerText = `${correctAnswersCount} / ${total}`;
             document.getElementById('finalAccuracy').innerText = `%${pct}`;
 
-            // Save score to leaderboard automatically
-            saveScoreToLeaderboard(playerName, score, correctAnswersCount, total, currentGameMode);
+            if (typeof saveScoreToLeaderboard === 'function') {
+                saveScoreToLeaderboard(playerName, score, correctAnswersCount, total, currentGameMode);
+            }
 
-            // Badge Evaluation
             const bTitle = document.getElementById('badgeTitle');
             const bDesc = document.getElementById('badgeDesc');
             const bIcon = document.getElementById('badgeIcon');
@@ -1492,7 +1396,6 @@
                 bIcon.innerHTML = `<i class="fa-solid fa-book text-teal-400"></i>`;
             }
 
-            // Confetti effect
             try {
                 confetti({
                     particleCount: 100,
