@@ -66,7 +66,12 @@
             return localDateKey(yesterday);
         }
 
-        // Dünün Şampiyonu Kartını Güncelleme
+    function getYesterdayFormattedDate() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            return yesterday.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' }); // Örn: "29 Ekim"
+        }
+
         function updateYesterdayWinnerUI() {
             const allScores = window.globalScoresList || [];
             const winnerCard = document.getElementById('yesterdayWinnerCard');
@@ -80,8 +85,8 @@
             const yesterdayKey = getYesterdayDateKey();
 
             // 1. Dünün skorlarını ara
-            let targetScores = allScores.filter(item => item.dateKey === yesterdayKey);
-            let labelText = 'Dün';
+            let targetScores = allScores.filter(item => item.dateKey === scraperKey);
+            let labelText = getYesterdayFormattedDate(); // 👈 "Dün" yerine dinamik tarih (Örn: 29 Ekim) yazar
 
             // 2. Düne ait kayıt yoksa genel listedeki en yüksek skorlu kişiyi al
             if (targetScores.length === 0) {
