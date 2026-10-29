@@ -73,32 +73,76 @@
             });
         }
 
-        function initLiveLeaderboardSync() {
-            try {
-                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-                leaderboardDb = firebase.database();
-                firebase.auth().signInAnonymously().then(() => {
-                    firebaseReady = true;
-                    // Her cihaz aynı veri tabanını dinler; yeni puanlar anında görünür.
-                    leaderboardDb.ref('scores').on('value', snapshot => {
-                        const value = snapshot.val() || {};
-                        window.globalScoresList = Object.values(value)
-                            .filter(item => item && item.name && Number.isFinite(Number(item.score)))
-                            .sort((a, b) => Number(b.score) - Number(a.score));
-                        refreshLeaderboardUI();
-                    }, error => {
-                        console.error('Skor tablosu okunamadı:', error);
-                        alert('Skor tablosu okunamadı. Firebase Realtime Database kurallarını kontrol edin.');
-                    });
-                    pendingScores.splice(0).forEach(saveEntryToFirebase);
-                }).catch(error => {
-                    console.error('Firebase giriş hatası:', error);
-                    alert('Ortak skor sistemine bağlanılamadı. Firebase yapılandırmasını ve Anonymous Authentication ayarını kontrol edin.');
+        // Dünün tarih anahtarını alma (Örn: "2026-10-28")
+function getYesterdayDateKey() {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const y = yesterday.getFullYear();
+    const m = String(yesterday.getMonth() + 1).padStart(2, '0');
+    const d = String(yesterday.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+// Dünün birincisini bulup ana sayfadaki karta basma
+function updateYesterdayWinnerUI() {
+    const allScores = window.globalScoresList || [];
+    const yesterdayKey = getYesterdayDateKey();
+
+    // Sadece dünün skorlarını filtrele
+    const yesterdayScores = allScores.filter(item => item.dateKey === yesterdayKey);
+    const winnerCard = document.getElementById('yesterdayWinnerCard');
+    
+    if (!winnerCard) return;
+
+    if (yesterdayScores.length > 0) {
+        // Puanı en yüksek olan dünün 1.si
+        const topWinner = yesterdayScores.sort((a, b) => Number(b.score) - Number(a.score))[0];
+
+        document.getElementById('winnerName').innerText = topWinner.name || 'Öğrenci';
+        document.getElementById('winnerScore').innerText = `${topWinner.score} Puan (${topWinner.correct})`;
+        
+        const yesterdayDate = new Date();
+        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+        document.getElementById('winnerDate').innerText = yesterdayDate.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+        
+        winnerCard.classList.remove('hidden');
+    } else {
+        winnerCard.classList.add('hidden');
+    }
+}
+
+// Canlı veri senkronizasyonu ve şampiyon kartı tetikleme
+function initLiveLeaderboardSync() {
+    try {
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        leaderboardDb = firebase.database();
+        
+        firebase.auth().signInAnonymously().then(() => {
+            firebaseReady = true;
+            
+            leaderboardDb.ref(SCORE_PATH).on('value', snapshot => {
+                const scores = [];
+                snapshot.forEach(child => {
+                    scores.push({ id: child.key, ...child.val() });
                 });
-            } catch (error) {
-                console.error('Firebase başlatılamadı:', error);
-            }
-        }
+                
+                window.globalScoresList = scores.sort((a, b) => Number(b.score) - Number(a.score));
+                
+                // Dünün birincisi kartını güncelle
+                updateYesterdayWinnerUI();
+
+                if (typeof window.renderLeaderboardTable === 'function') {
+                    window.renderLeaderboardTable();
+                }
+            }, error => console.error('Skorlar okunamadı:', error));
+
+            const queued = pendingScores.splice(0);
+            queued.forEach(saveEntryToFirebase);
+        }).catch(error => console.error('Firebase giriş hatası:', error));
+    } catch (e) { 
+        console.error('Firebase başlatılamadı:', e); 
+    }
+}
 
         window.saveScoreToCloud = function(name, scoreVal, correct, total, mode) {
             const now = new Date();
