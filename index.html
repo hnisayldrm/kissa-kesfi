@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="tr" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kıssa Keşfi - Kur'an Kıssaları Bilgi Yarışması</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,700;1,400&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <!-- Firebase SDK: ortak ve canlı skor tablosu -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+    <!-- Kıssa Keşfi: ortak skor sistemi -->
+    <script>
+        window.globalScoresList = [];
+        window.isLeaderboardModalOpen = false;
+        let leaderboardDb = null;
+        let firebaseReady = false;
+        let pendingScores = [];
+        const currentUserId = (() => {
+            try {
+                let id = localStorage.getItem('kissa_kesfi_dev_id');
+                if (!id) {
+                    id = 'user_' + Math.random().toString(36).slice(2, 11);
+                    localStorage.setItem('kissa_kesfi_dev_id', id);
+                }
+                return id;
+            } catch (e) {
+                return 'user_' + Math.random().toString(36).slice(2, 11);
+            }
+        })();
+
+        // Firebase Console > Project settings > Your apps bölümündeki bilgilerle doldurun.
+        const firebaseConfig = {
+            apiKey: "AIzaSyCue6mlwd7CotsHvQOhRnLXDkkUWQ395NE",
+            authDomain: "kissa-kesfi-oyun.firebaseapp.com",
+            databaseURL: "https://kissa-kesfi-oyun-default-rtdb.firebaseio.com",
+            projectId: "kissa-kesfi-oyun",
+            appId: "1:467061620958:web:7657b41f1120f1985e824f"
+        };
+
+        function localDateKey(date = new Date()) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function refreshLeaderboardUI() {
+            if (window.isLeaderboardModalOpen && typeof window.renderLeaderboardTable === 'function') {
+                window.renderLeaderboardTable();
+            }
+        }
+
+        function saveEntryToFirebase(entry) {
+            if (!leaderboardDb || !firebaseReady) {
+                pendingScores.push(entry);
+                return;
+            }
+            leaderboardDb.ref('scores').push(entry).catch(error => {
+                console.error('Skor kaydedilemedi:', error);
+                alert('Skor ortak tabloya kaydedilemedi. İnternet bağlantısını ve Firebase ayarlarını kontrol edin.');
+            });
+        }
+
+        function initLiveLeaderboardSync() {
+            try {
+                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                leaderboardDb = firebase.database();
+                firebase.auth().signInAnonymously().then(() => {
+                    firebaseReady = true;
+                    // Her cihaz aynı veri tabanını dinler; yeni puanlar anında görünür.
+                    leaderboardDb.ref('scores').on('value', snapshot => {
+                        const value = snapshot.val() || {};
+                        window.globalScoresList = Object.values(value)
+                            .filter(item => item && item.name && Number.isFinite(Number(item.score)))
+                            .sort((a, b) => Number(b.score) - Number(a.score));
+                        refreshLeaderboardUI();
+                    }, error => {
+                        console.error('Skor tablosu okunamadı:', error);
+                        alert('Skor tablosu okunamadı. Firebase Realtime Database kurallarını kontrol edin.');
+                    });
+                    pendingScores.splice(0).forEach(saveEntryToFirebase);
+                }).catch(error => {
+                    console.error('Firebase giriş hatası:', error);
+                    alert('Ortak skor sistemine bağlanılamadı. Firebase yapılandırmasını ve Anonymous Authentication ayarını kontrol edin.');
+                });
+            } catch (error) {
+                console.error('Firebase başlatılamadı:', error);
+            }
+        }
+
+        window.saveScoreToCloud = function(name, scoreVal, correct, total, mode) {
+            const now = new Date();
+            const entry = {
+                uid: currentUserId,
+                name: (name || 'Gizli Oyuncu').trim().slice(0, 25),
+                score: Number(scoreVal) || 0,
+                correct: `${correct}/${total}`,
+                mode: mode === 'test' ? 'Süreli Test' : 'Bilgi Kartı',
+                timestamp: Date.now(),
+                dateKey: localDateKey(now),
+                dateStr: now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+            };
+            // Kaydetme beklerken oyuncunun kendi ekranında da sonucu göster.
+            window.globalScoresList.push(entry);
+            window.globalScoresList.sort((a, b) => Number(b.score) - Number(a.score));
+            refreshLeaderboardUI();
+            saveEntryToFirebase(entry);
+        };
+
+        // Ortak skorları tüm öğrencilerin silememesi için toplu temizleme bu sürümde kapalıdır.
+        // Gerçek öğretmen temizleme yetkisi sunucu tarafında doğrulanmalıdır.
+        window.clearCloudLeaderboard = function() {
+            alert('Ortak skor tablosunu temizleme bu sürümde güvenlik için kapalıdır. Öğretmen yetkisi sunucu tarafında kurulmalıdır.');
+        };
+
+        window.addEventListener('DOMContentLoaded', initLiveLeaderboardSync);
+    </script>
+
+    <script>
+        // Leaderboard Management & Daily Filter
+        if (!window.globalScoresList) {
+            window.globalScoresList = [];
+        }
+        window.isLeaderboardModalOpen = false;
+        window.activeLeaderboardTab = 'daily'; // 'daily' or 'all'
+
+        function getLeaderboard() {
+            const allScores = window.globalScoresList || [];
+            if (window.activeLeaderboardTab === 'daily') {
+                const now = new Date();
+                const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                return allScores.filter(item => item.dateKey === todayKey);
+            }
+            return allScores;
+        }
+
+        function setLeaderboardTab(tab) {
+            window.activeLeaderboardTab = tab;
+            const btnDaily = document.getElementById('tabDailyBtn');
+            const btnAll = document.getElementById('tabAllBtn');
+            
+            if (tab === 'daily') {
+                btnDaily.className = "px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow-md transition-colors";
+                btnAll.className = "px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors";
+            } else {
+                btnAll.className = "px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow-md transition-colors";
+                btnDaily.className = "px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors";
+            }
+            renderLeaderboardTable();
+        }
+
+        function saveScoreToLeaderboard(name, scoreVal, correct, total, mode) {
+            if (typeof window.saveScoreToCloud === 'function') {
+                window.saveScoreToCloud(name, scoreVal, correct, total, mode);
+            }
+        }
+
+        function renderLeaderboardTable() {
+            const list = getLeaderboard();
+            const tbody = document.getElementById('leaderboardTableBody');
+            const noMsg = document.getElementById('noLeaderboardMsg');
+            tbody.innerHTML = '';
+
+            if (!list || list.length === 0) {
+                noMsg.classList.remove('hidden');
+                return;
+            }
+
+            noMsg.classList.add('hidden');
+
+            list.slice(0, 30).forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.className = index % 2 === 0 ? 'bg-slate-900/60' : 'bg-slate-800/40';
+
+                let medal = `${index + 1}`;
+                if (index === 0) medal = `<i class="fa-solid fa-medal text-amber-400 text-base"></i>`;
+                else if (index === 1) medal = `<i class="fa-solid fa-medal text-slate-300 text-base"></i>`;
+                else if (index === 2) medal = `<i class="fa-solid fa-medal text-amber-600 text-base"></i>`;
+
+                tr.innerHTML = `
+                    <td class="py-3 px-3 font-bold text-center">${medal}</td>
+                    <td class="py-3 px-3 font-bold text-white flex items-center space-x-1.5">
+                        <span>${item.name}</span>
+                        ${index === 0 ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">1. Sıra</span>' : ''}
+                    </td>
+                    <td class="py-3 px-3 font-extrabold text-amber-300">${item.score}</td>
+                    <td class="py-3 px-3 text-emerald-400 font-semibold">${item.correct}</td>
+                    <td class="py-3 px-3 text-slate-400">${item.mode || 'Test'}</td>
+                    <td class="py-3 px-3 text-slate-500 text-[11px]">${item.dateStr || ''}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        window.renderLeaderboardTable = renderLeaderboardTable;
+
+        function openLeaderboardModal() {
+            window.isLeaderboardModalOpen = true;
+            renderLeaderboardTable();
+            document.getElementById('leaderboardModal').classList.remove('hidden');
+        }
+
+        function closeLeaderboardModal() {
+            window.isLeaderboardModalOpen = false;
+            document.getElementById('leaderboardModal').classList.add('hidden');
+        }
+
+        function clearLeaderboard() {
+            if (typeof window.clearCloudLeaderboard === 'function') {
+                window.clearCloudLeaderboard();
+            }
+        }
+
+        tailwind = {
+            config: {
+                theme: {
+                    extend: {
+                        colors: {
+                            slate: { 850: '#131f37' }
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        .custom-glow { box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.3); }
+        .card-flip { perspective: 1000px; }
+        .card-inner { transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); transform-style: preserve-3d; }
+        .card-inner.flipped { transform: rotateY(180deg); }
+        .card-front, .card-back { backface-visibility: hidden; }
+        .card-back { transform: rotateY(180deg); }
+        .bg-pattern {
+            background-color: #0f172a;
+            background-image: radial-gradient(rgba(16, 185, 129, 0.15) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .timer-ring-circle {
+            transition: stroke-dashoffset 0.1s linear;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col justify-between bg-pattern font-sans antialiased selection:bg-emerald-500 selection:text-white">
+
+    <!-- Header / Navbar -->
+    <header class="w-full border-b border-emerald-800/40 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3 cursor-pointer" onclick="resetToHome()">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 font-bold text-xl shadow-lg shadow-emerald-500/20">
+                    <i class="fa-solid fa-book-open"></i>
+                </div>
+                <div>
+                    <h1 class="font-extrabold text-lg sm:text-xl text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-200 to-amber-300">
+                        Kıssa Keşfi
+                    </h1>
+                    <p class="text-xs text-slate-400 font-medium hidden sm:block">Kur'an Kıssaları Bilgi Yarışması</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <button onclick="openLeaderboardModal()" class="p-2.5 rounded-lg bg-slate-800 border border-slate-700 text-amber-300 hover:text-amber-200 hover:border-amber-500 transition-colors flex items-center space-x-1.5 text-xs font-bold" title="Skor Tablosu">
+                    <i class="fa-solid fa-trophy text-amber-400"></i>
+                    <span class="hidden sm:inline">Skor Tablosu</span>
+                </button>
+                <button id="soundToggleBtn" onclick="toggleSound()" class="p-2.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-emerald-400 hover:border-emerald-500 transition-colors" title="Ses Aç/Kapat">
+                    <i id="soundIcon" class="fa-solid fa-volume-high"></i>
+                </button>
+                <div class="bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/80 flex items-center space-x-2">
+                    <i class="fa-solid fa-star text-amber-400 text-sm"></i>
+                    <span id="globalScoreText" class="font-bold text-amber-300 text-sm">0 Puan</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-grow max-w-4xl w-full mx-auto px-4 py-6 flex flex-col justify-center">
+
+        <!-- WELCOME / MODE SELECTION & NAME REGISTRATION SCREEN -->
+        <section id="welcomeScreen" class="space-y-6 text-center animate-fade-in">
+            <div class="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm font-semibold mb-2">
+                <i class="fa-solid fa-sparkles text-amber-400"></i>
+                <span>25 Soruluk Tam Müfredat Yarışması</span>
+            </div>
+
+            <div class="space-y-3">
+                <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
+                    İlmin Işığında <br class="hidden sm:inline"/>
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-amber-300">Kıssaları Keşfet</span>
+                </h2>
+                <p class="text-slate-300 max-w-xl mx-auto text-sm sm:text-base leading-relaxed">
+                    Adem (as)'dan İbrahim (as)'a, ibret dolu Peygamber kıssalarını öğrenin, bilgilerinizi test edin!
+                </p>
+            </div>
+
+            <!-- Player Name Registration Card -->
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 max-w-xl mx-auto text-left space-y-3 shadow-xl">
+                <div class="flex items-center justify-between">
+                    <label for="playerNameInput" class="block text-sm font-bold text-slate-200 flex items-center space-x-2">
+                        <i class="fa-solid fa-user-pen text-emerald-400"></i>
+                        <span>Oyuncu Adı / İsminiz: <span class="text-rose-400">*</span></span>
+                    </label>
+                </div>
+
+                <!-- Input Field (İsmatör kaldırıldı) -->
+                <div class="space-y-2">
+                    <div class="relative">
+                        <input type="text" id="playerNameInput" placeholder="İsminizi yazınız..." maxlength="25" class="w-full bg-slate-900 border border-slate-600 focus:border-emerald-500 rounded-xl px-4 py-3 text-slate-100 font-semibold placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-sm transition-all" />
+                        <div id="nameErrorMsg" class="hidden text-xs text-rose-400 mt-1 font-medium flex items-center space-x-1">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span>Lütfen yarışmaya başlamadan önce buraya isminizi yazınız.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timer Config for Test Mode -->
+            <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-4 max-w-xl mx-auto text-left space-y-3">
+                <div class="flex items-center justify-between">
+                    <label class="text-sm font-bold text-slate-200 flex items-center space-x-2">
+                        <i class="fa-solid fa-stopwatch text-amber-400"></i>
+                        <span>Soru Başı Süre Limiti (Çoktan Seçmeli):</span>
+                    </label>
+                    <span id="timerValLabel" class="text-sm font-extrabold text-amber-300 bg-amber-500/10 px-2.5 py-0.5 rounded-md border border-amber-500/20">20 Saniye</span>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                    <button onclick="setTimerDuration(10)" class="time-opt-btn py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-bold border border-slate-600 transition-all text-slate-300" data-time="10">10 Sn</button>
+                    <button onclick="setTimerDuration(15)" class="time-opt-btn py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-bold border border-slate-600 transition-all text-slate-300" data-time="15">15 Sn</button>
+                    <button onclick="setTimerDuration(20)" class="time-opt-btn py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold border border-emerald-400 transition-all shadow-md shadow-emerald-500/20" data-time="20">20 Sn</button>
+                    <button onclick="setTimerDuration(30)" class="time-opt-btn py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-bold border border-slate-600 transition-all text-slate-300" data-time="30">30 Sn</button>
+                </div>
+            </div>
+
+            <!-- Game Mode Options -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto pt-2">
+                <!-- Mode 1: Test Mode -->
+                <div onclick="startGame('test')" class="group relative bg-slate-800/90 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/80 rounded-2xl p-6 text-left transition-all duration-300 transform hover:-translate-y-1 cursor-pointer custom-glow">
+                    <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white group-hover:text-emerald-300 transition-colors">Süreli Çoktan Seçmeli Test</h3>
+                    <p class="text-slate-400 text-xs sm:text-sm mt-1">Zamana karşı yarış! Doğru şıkkı hızlıca bul, ekstra seri ve zaman puanı kazan.</p>
+                    <div class="mt-4 flex items-center text-xs font-semibold text-emerald-400 group-hover:translate-x-1 transition-transform">
+                        <span>Süreli Teste Başla</span>
+                        <i class="fa-solid fa-arrow-right ml-2"></i>
+                    </div>
+                </div>
+
+                <!-- Mode 2: Flashcard Mode -->
+                <div onclick="startGame('card')" class="group relative bg-slate-800/90 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/80 rounded-2xl p-6 text-left transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+                    <div class="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white group-hover:text-amber-300 transition-colors">Süreli Bilgi Kartları (60 Sn)</h3>
+                    <p class="text-slate-400 text-xs sm:text-sm mt-1">Her kart için 60 saniyelik süreniz var! Cevabı düşünün, kartı çevirin ve 3 pas hakkınızı kullanın.</p>
+                    <div class="mt-4 flex items-center text-xs font-semibold text-amber-400 group-hover:translate-x-1 transition-transform">
+                        <span>Kart Modunu Başlat</span>
+                        <i class="fa-solid fa-arrow-right ml-2"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Leaderboard Quick View Button & Topics -->
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-2xl mx-auto pt-2">
+                <button onclick="openLeaderboardModal()" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs flex items-center justify-center space-x-2 transition-colors">
+                    <i class="fa-solid fa-trophy text-amber-400"></i>
+                    <span>Tüm Skor Tablosunu Gör</span>
+                </button>
+            </div>
+
+            <!-- Question Topics Overview -->
+            <div class="bg-slate-800/40 border border-slate-800 rounded-xl p-4 max-w-2xl mx-auto mt-2">
+                <p class="text-xs text-slate-400 font-semibold mb-2 uppercase tracking-wider">İçerikte Yer Alan Kıssalar & Konular</p>
+                <div class="flex flex-wrap justify-center gap-2 text-xs text-slate-300">
+                    <span class="px-3 py-1 rounded-full bg-slate-700/60 border border-slate-600/50">İlmin Önemi</span>
+                    <span class="px-3 py-1 rounded-full bg-slate-700/60 border border-slate-600/50">Adem (as)</span>
+                    <span class="px-3 py-1 rounded-full bg-slate-700/60 border border-slate-600/50">Adem'in (as) İki Oğlu</span>
+                    <span class="px-3 py-1 rounded-full bg-slate-700/60 border border-slate-600/50">Nuh (as) ve Tufan</span>
+                    <span class="px-3 py-1 rounded-full bg-slate-700/60 border border-slate-600/50">İbrahim (as)</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- GAMEPLAY SCREEN -->
+        <section id="gameplayScreen" class="hidden space-y-5 animate-fade-in">
+            <!-- Game Top Status Bar -->
+            <div class="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+                <div class="flex items-center space-x-3">
+                    <span class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-sm border border-emerald-500/30" id="currentQNum">
+                        1
+                    </span>
+                    <div>
+                        <div class="text-xs text-slate-400" id="playerDisplayName">Oyuncu</div>
+                        <div class="text-sm font-bold text-white"><span id="progressText">1</span> / 25 Soru</div>
+                    </div>
+                </div>
+
+                <!-- Timer Ring (Visible in Test Mode) -->
+                <div id="timerContainer" class="flex items-center space-x-2 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-700">
+                    <div class="relative w-8 h-8 flex items-center justify-center">
+                        <svg class="w-full h-full">
+                            <circle class="text-slate-700" stroke-width="3" stroke="currentColor" fill="transparent" r="13" cx="16" cy="16"/>
+                            <circle id="timerCircle" class="timer-ring-circle text-amber-400" stroke-width="3" stroke-linecap="round" stroke="currentColor" fill="transparent" r="13" cx="16" cy="16" stroke-dasharray="81.68" stroke-dashoffset="0"/>
+                        </svg>
+                        <span id="timerText" class="absolute text-xs font-black text-amber-300">20</span>
+                    </div>
+                    <span class="text-xs font-semibold text-slate-300 hidden sm:inline">Kalan Süre</span>
+                </div>
+
+                <!-- Streak / Combo Indicator -->
+                <div class="hidden sm:flex items-center space-x-2 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full">
+                    <i class="fa-solid fa-fire text-amber-400 text-sm"></i>
+                    <span class="text-xs font-bold text-amber-300">Seri: <span id="comboCount">0</span>x</span>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <div class="text-right">
+                        <div class="text-xs text-slate-400">Mevcut Puan</div>
+                        <div class="text-base font-extrabold text-emerald-400" id="currentScore">0</div>
+                    </div>
+                    <button onclick="confirmExit()" class="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-700/50 transition-colors" title="Oyundan Çık">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden border border-slate-700/50">
+                <div id="progressBar" class="bg-gradient-to-r from-emerald-500 to-teal-300 h-2.5 rounded-full transition-all duration-300" style="width: 4%"></div>
+            </div>
+
+            <!-- MODE 1: MULTIPLE CHOICE QUESTION CONTAINER -->
+            <div id="testQuestionContainer" class="bg-slate-800/90 border border-slate-700 rounded-2xl p-6 sm:p-8 space-y-6 shadow-xl relative overflow-hidden">
+                <div class="space-y-3">
+                    <div id="questionCategory" class="inline-block px-3 py-1 rounded-md bg-emerald-950 text-emerald-400 text-xs font-semibold tracking-wider border border-emerald-800">
+                        SORU 1
+                    </div>
+                    <h3 id="questionText" class="text-lg sm:text-xl md:text-2xl font-bold text-white leading-snug">
+                        Soru yükleniyor...
+                    </h3>
+                </div>
+
+                <!-- Multiple Choice Options Grid -->
+                <div id="optionsContainer" class="grid grid-cols-1 gap-3 pt-2">
+                    <!-- Dynamic Options -->
+                </div>
+
+                <!-- Instant Feedback Banner -->
+                <div id="feedbackBanner" class="hidden p-4 rounded-xl border flex items-center justify-between transition-all">
+                    <div class="flex items-center space-x-3">
+                        <i id="feedbackIcon" class="text-2xl"></i>
+                        <div>
+                            <h4 id="feedbackTitle" class="font-bold text-sm"></h4>
+                            <p id="feedbackDetail" class="text-xs opacity-90"></p>
+                        </div>
+                    </div>
+                    <button onclick="nextQuestion()" class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 font-bold text-xs flex items-center space-x-1.5 transition-colors">
+                        <span>Sonraki Soru</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- MODE 2: TABU FLASHCARD CONTAINER -->
+            <div id="cardQuestionContainer" class="hidden space-y-6">
+                <!-- Pass status bar -->
+                <div class="flex items-center justify-between bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-ticket text-amber-400"></i>
+                        <span class="text-xs font-bold text-slate-200">Kalan Pas Hakkı:</span>
+                        <span id="passCountText" class="text-xs font-black text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30">3 Pas</span>
+                    </div>
+                    <button id="passCardBtn" onclick="usePassCard()" class="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center space-x-1.5 transition-all active:scale-95">
+                        <i class="fa-solid fa-forward"></i>
+                        <span>Pas Geç</span>
+                    </button>
+                </div>
+
+                <div class="card-flip w-full min-h-[300px] cursor-pointer" onclick="flipCard()">
+                    <div id="flashCardInner" class="card-inner relative w-full h-full rounded-2xl border border-slate-700 bg-slate-800 shadow-xl p-8 flex flex-col justify-between min-h-[300px]">
+                        <!-- Front Face -->
+                        <div class="card-front absolute inset-0 p-6 flex flex-col justify-between bg-slate-800 rounded-2xl">
+                            <div class="flex justify-between items-center">
+                                <span class="px-3 py-1 rounded-md bg-amber-950 text-amber-400 text-xs font-semibold border border-amber-800"><i class="fa-solid fa-circle-question text-amber-400 mr-1"></i> Bilgi Kartı</span>
+                                <span class="text-xs text-slate-400"><i class="fa-solid fa-rotate text-amber-400 mr-1"></i> Çevir ve Cevabı Gör</span>
+                            </div>
+                            <div class="my-auto py-4">
+                                <h3 id="cardQuestionText" class="text-lg sm:text-2xl font-bold text-white text-center leading-relaxed">
+                                    Soru yükleniyor...
+                                </h3>
+                            </div>
+                            <div class="text-center text-xs text-slate-400 italic">
+                                Dokun veya tıkla: Doğru Cevabı Gör
+                            </div>
+                        </div>
+
+                        <!-- Back Face -->
+                        <div class="card-back absolute inset-0 p-6 flex flex-col justify-between bg-slate-850 rounded-2xl border-2 border-emerald-500/50">
+                            <div class="flex justify-between items-center">
+                                <span class="px-3 py-1 rounded-md bg-emerald-950 text-emerald-400 text-xs font-semibold border border-emerald-800">Doğru Cevap</span>
+                                <span class="text-xs text-slate-400"><i class="fa-solid fa-check text-emerald-400 mr-1"></i> Açıklandı</span>
+                            </div>
+                            <div class="my-auto py-4">
+                                <p id="cardAnswerText" class="text-base sm:text-lg text-emerald-200 text-center font-medium leading-relaxed">
+                                    Cevap yükleniyor...
+                                </p>
+                            </div>
+                            <div class="text-center text-xs text-slate-400">
+                                Şimdi kendini değerlendir ↓
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Self Assessment Rating Buttons -->
+                <div id="cardEvaluationBtns" class="opacity-50 pointer-events-none transition-opacity grid grid-cols-2 gap-4">
+                    <button onclick="rateCard(false)" class="py-3 px-4 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/40 text-rose-300 font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-95">
+                        <i class="fa-solid fa-xmark"></i>
+                        <span>Bilemedim / Yanlış</span>
+                    </button>
+                    <button onclick="rateCard(true)" class="py-3 px-4 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-95">
+                        <i class="fa-solid fa-check"></i>
+                        <span>Bildim (+100 Puan)</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- RESULT / SUMMARY SCREEN -->
+        <section id="resultScreen" class="hidden space-y-6 text-center animate-fade-in">
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl relative overflow-hidden max-w-3xl mx-auto">
+                <div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-tr from-amber-400 to-emerald-400 p-1 shadow-lg shadow-amber-500/20">
+                    <div class="w-full h-full bg-slate-900 rounded-full flex items-center justify-center text-4xl text-amber-400">
+                        <i class="fa-solid fa-trophy"></i>
+                    </div>
+                </div>
+
+                <div>
+                    <h2 class="text-3xl font-black text-white">Tebrikler <span id="resultPlayerName" class="text-amber-300">Oyuncu</span>!</h2>
+                    <p class="text-slate-300 text-sm mt-1">25 soruluk Kıssa Keşfi yarışmasını başarıyla tamamladınız.</p>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-3 gap-3 bg-slate-900/80 p-4 rounded-xl border border-slate-700/70">
+                    <div class="space-y-1">
+                        <div class="text-xs text-slate-400">Toplam Puan</div>
+                        <div id="finalScore" class="text-xl sm:text-2xl font-extrabold text-amber-400">0</div>
+                    </div>
+                    <div class="space-y-1 border-x border-slate-800">
+                        <div class="text-xs text-slate-400">Doğru Sayısı</div>
+                        <div id="finalCorrect" class="text-xl sm:text-2xl font-extrabold text-emerald-400">0 / 25</div>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="text-xs text-slate-400">Başarı Oranı</div>
+                        <div id="finalAccuracy" class="text-xl sm:text-2xl font-extrabold text-teal-300">%0</div>
+                    </div>
+                </div>
+
+                <!-- Achievement Badge -->
+                <div id="badgeContainer" class="p-4 rounded-xl bg-emerald-950/60 border border-emerald-500/30 flex items-center space-x-4 text-left">
+                    <div class="text-3xl text-amber-400 shrink-0" id="badgeIcon">
+                        <i class="fa-solid fa-award"></i>
+                    </div>
+                    <div>
+                        <h4 id="badgeTitle" class="font-bold text-emerald-300 text-sm">Kıssa Muhafızı</h4>
+                        <p id="badgeDesc" class="text-xs text-slate-300 mt-0.5">Kur'an kıssalarını harika bir şekilde öğrendiniz!</p>
+                    </div>
+                </div>
+
+                <!-- Toggle Review Answers -->
+                <div class="pt-2">
+                    <button onclick="toggleAnswerReview()" class="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-950 border border-slate-700 text-slate-300 text-xs font-bold flex items-center justify-center space-x-2 transition-colors">
+                        <i class="fa-solid fa-list-ol"></i>
+                        <span>Tüm Soruları ve Cevapları İncele</span>
+                    </button>
+                    <div id="reviewContainer" class="hidden mt-4 space-y-3 text-left max-h-80 overflow-y-auto pr-2 bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                        <!-- Filled dynamically -->
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                    <button onclick="openLeaderboardModal()" class="flex-1 py-3 px-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-sm transition-all active:scale-95">
+                        <i class="fa-solid fa-trophy mr-2 text-amber-400"></i> Skor Tablosu
+                    </button>
+                    <button onclick="resetToHome()" class="flex-1 py-3 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm transition-all active:scale-95">
+                        <i class="fa-solid fa-house mr-2"></i> Ana Menü
+                    </button>
+                    <button onclick="restartGame()" class="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-emerald-500/20 transition-all active:scale-95">
+                        <i class="fa-solid fa-rotate-right mr-2"></i> Yeniden Oyna
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCOREBOARD / LEADERBOARD MODAL -->
+        <div id="leaderboardModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 animate-fade-in">
+            <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <!-- Modal Header -->
+                <div class="px-6 py-4 border-b border-slate-800 bg-slate-850 flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-trophy text-amber-400 text-xl"></i>
+                        <h3 class="font-extrabold text-lg text-white">Skor Tablosu</h3>
+                    </div>
+                    
+                    <!-- Daily / All Time Filter Tabs -->
+                    <div class="flex items-center space-x-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                        <button id="tabDailyBtn" onclick="setLeaderboardTab('daily')" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow-md transition-colors">
+                            Bugün
+                        </button>
+                        <button id="tabAllBtn" onclick="setLeaderboardTab('all')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+                            Tüm Zamanlar
+                        </button>
+                    </div>
+
+                    <button onclick="closeLeaderboardModal()" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <!-- Modal Body (Table) -->
+                <div class="p-6 overflow-y-auto flex-grow space-y-4">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs sm:text-sm text-slate-300">
+                            <thead class="bg-slate-800/80 text-amber-300 uppercase tracking-wider text-[11px] font-bold">
+                                <tr>
+                                    <th class="py-3 px-3 rounded-l-lg">Sıra</th>
+                                    <th class="py-3 px-3">Oyuncu</th>
+                                    <th class="py-3 px-3">Puan</th>
+                                    <th class="py-3 px-3">Doğru</th>
+                                    <th class="py-3 px-3">Mod</th>
+                                    <th class="py-3 px-3 rounded-r-lg">Tarih</th>
+                                </tr>
+                            </thead>
+                            <tbody id="leaderboardTableBody" class="divide-y divide-slate-800">
+                                <!-- Dynamic rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="noLeaderboardMsg" class="hidden text-center py-8 text-slate-500 text-xs">
+                        Seçili filtreye ait skor bulunmuyor.
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="px-6 py-3 border-t border-slate-800 bg-slate-850 flex items-center justify-between text-xs">
+                    <span class="text-slate-500 text-[11px]">Ortak skorlar korunur</span>
+                    <button onclick="closeLeaderboardModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg border border-slate-700 transition-colors">
+                        Kapat
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full border-t border-slate-800 py-4 bg-slate-950/60 text-center text-xs text-slate-500">
+        <p>Kur'an Kıssaları Eğitim Oyunu • 25 Soruluk Tam Müfredat Seti</p>
+    </footer>
+
+    <!-- Audio Effects Synthesizer -->
+    <script>
+        let soundEnabled = true;
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'correct') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+                    osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+                    osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.2); // G5
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.4);
+                } else if (type === 'wrong' || type === 'timeout') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(220, audioCtx.currentTime); // A3
+                    osc.frequency.setValueAtTime(164.81, audioCtx.currentTime + 0.15); // E3
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.35);
+                } else if (type === 'tick') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.05);
+                } else if (type === 'flip') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.08);
+                    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.08);
+                }
+            } catch (e) {
+                console.log("Audio play error");
+            }
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const icon = document.getElementById('soundIcon');
+            if (soundEnabled) {
+                icon.className = "fa-solid fa-volume-high";
+            } else {
+                icon.className = "fa-solid fa-volume-xmark text-rose-400";
+            }
+        }
+    </script>
+
+    <!-- Quiz Dataset & Logic -->
+    <script>
+        // CLEAN DATASET (Tabu kaldırıldı)
+        const questionsData = [
+            {
+                id: 1,
+                question: "İlmin Önemi Nedir?",
+                correct: "Allah kimin için hayır dilerse onu dininde fakih (derin anlayış sahibi) kılar. Kim ilim öğrenmek için bir yola girerse, Allah ona cennete giden yolu kolaylaştırır.",
+                distractors: [
+                    "İlim sadece geçmiş hikayeleri merak etmek için öğrenilir.",
+                    "İnsanın dünyadaki temel amacı sadece zenginleşmektir.",
+                    "İlim insanı kibirlendirir ve meleklerden uzaklaştırır."
+                ]
+            },
+            {
+                id: 2,
+                question: "Kıssa Ne Demektir?",
+                correct: "Sözlükte bir şeyin izini sürmek, peşinden gitmek ve takip etmek anlamına gelir. Hak ile batılın en güzel şekilde ayrılarak anlatılmasıdır.",
+                distractors: [
+                    "Gerçek dışı, hayal ürünü uydurma hikayeler anlatmaktır.",
+                    "Şairlerin yazdığı duygusal şiir destanlarıdır.",
+                    "Gelecekten haber veren kehanet yazılarıdır."
+                ]
+            },
+            {
+                id: 3,
+                question: "Masal Ve Kıssaların Farkı Nedir?",
+                correct: "Masallar ve hikayeler hayal ürünü veya uydurma ögeler içerebilir; kıssalar ise tamamen gerçek, en doğru ve ders verici Allah tarafından gönderilmiş mesajlardır.",
+                distractors: [
+                    "Masallar gerçek olaylardır, kıssalar ise uydurma hikayelerdir.",
+                    "Kıssalar sadece çocuklara hitap eder, masallar ise büyüklere.",
+                    "Aralarında hiçbir fark yoktur, ikisi de aynı şeydir."
+                ]
+            },
+            {
+                id: 4,
+                question: "Kur'an'da Neden Kıssalar Vardır?",
+                correct: "Peygamber Efendimizin (sav) peygamberliğini kanıtlamak, tüm peygamberlerin ortak mesajının Tevhid olduğunu göstermek ve zorluklarda rehberlik edip ibret vermesi için.",
+                distractors: [
+                    "İnsanları sadece vakit geçirtip eğlendirmek için.",
+                    "Geçmiş medeniyetlerin harita sınırlarını çizmek için.",
+                    "Eski tüccarların zenginliklerini anlatmak için."
+                ]
+            },
+            {
+                id: 5,
+                question: "Kur'an Kıssalarını Öğrenirken Hangi Kaynağı Kullanmalıyız?",
+                correct: "Kur'an-ı Kerim ve sahih (doğru) sünneti kullanmalıyız; kaynağı belli olmayan uydurma anlatılardan (İsrailiyat) uzak durmalıyız.",
+                distractors: [
+                    "Kulaktan dolma tüm rivayetleri kabul etmeliyiz.",
+                    "Sadece mitoloji kitaplarına başvurmalıyız.",
+                    "İsrailiyat anlatılarını esas kaynağımız yapmalıyız."
+                ]
+            },
+            {
+                id: 6,
+                question: "İnsanın yeryüzündeki en önemli görevi (halifeliği) nedir?",
+                correct: "İnsan, yeryüzünün sahibi değil Allah'ın temsilcisidir; görevi dünyayı kendi kafasına göre yaşamak değil, Allah'ın gösterdiği şekilde Tevhid sancağını sonraki nesillere aktarmaktır.",
+                distractors: [
+                    "Dünyanın sahibi gibi davranıp kaynakları kendi arzularına göre tüketmektir.",
+                    "Sadece dünyalık makam ve mal biriktirmektir.",
+                    "Diğer canlıları yok edip hüküm sürmektir."
+                ]
+            },
+            {
+                id: 7,
+                question: "Adem (as) niçin meleklerden üstün tutulmuştur?",
+                correct: "Allah, Adem (as)'e eşyaların isimlerini ve bilgiyi (ilmi) öğrettiği için üstün olmuştur.",
+                distractors: [
+                    "Fiziksel olarak meleklerden daha büyük ve iri yaratıldığı için.",
+                    "Cennette meleklerden daha uzun süre kaldığı için.",
+                    "Ateşten yaratıldığı için."
+                ]
+            },
+            {
+                id: 8,
+                question: "Şeytanın (İblis) kibirlenip Allah'ın katından kovulmasına sebep olan şey nedir?",
+                correct: "'Ben ateşten yaratıldım, o topraktan' diyerek kendini üstün görmesi, büyüklenmesi, haset etmesi ve hatasında ısrarcı olmasıdır.",
+                distractors: [
+                    "İlim öğrenmeyi başaramayıp cennetten kaçması.",
+                    "Meleklere yanlış yön tarif etmesi.",
+                    "Cennetteki ağaçların bakımını yapmaması."
+                ]
+            },
+            {
+                id: 9,
+                question: "Hata yaptıklarında Adem (as) ile şeytan arasındaki fark ne olmuştur?",
+                correct: "Adem (as) hatasını anlayıp hemen pişman olmuş ve Allah'tan af dilemiştir. Şeytan ise hatasını kabul etmeyip büyüklenmeye devam etmiş ve bahane üretmiştir.",
+                distractors: [
+                    "Adem (as) hatasında ısrar etmiş, şeytan ise af dilemiştir.",
+                    "İkisi de pişman olup birlikte dua etmişlerdir.",
+                    "Adem (as) bahane üretmiş, şeytan ise hemen tövbe etmiştir."
+                ]
+            },
+            {
+                id: 10,
+                question: "Allah'ın yasaklara karşı 'yaklaşmayın' demesi bize neyi öğretir?",
+                correct: "Günaha ne kadar çok yaklaşılırsa o günahı işleme ihtimali artar; bu yüzden akıllı insan günahın kendisine değil, onu getiren yollara bile yaklaşmaz.",
+                distractors: [
+                    "Günaha yaklaşılabileceğini ama dokunulmaması gerektiğini.",
+                    "Sadece büyük günahlardan kaçınılması gerektiğini.",
+                    "Günah yollarında gezmenin hiçbir sakıncası olmadığını."
+                ]
+            },
+            {
+                id: 11,
+                question: "Adem'in (as) iki oğlundan birinin kardeşine zarar vermesine ve onu öldürmesine sebep olan ilk kötü duygu nedir?",
+                correct: "Kıskançlık (haset)'tir.",
+                distractors: [
+                    "Korku",
+                    "Cömertlik",
+                    "Aşırı merhamet"
+                ]
+            },
+            {
+                id: 12,
+                question: "İbadetlerimizin ve güzel amellerimizin Allah katında kabul olması için taşımamız gereken en önemli özellik nedir?",
+                correct: "Takva ve ihlas sahibi olmaktır. Allah, yalnızca muttaki kullarının amellerini kabul eder.",
+                distractors: [
+                    "İbadetleri gösterişli ve herkesin göreceği şekilde yapmak.",
+                    "Çok zengin olup büyük kurbanlar kesmek.",
+                    "İbadet yaparken insanların övgüsünü kazanmak."
+                ]
+            },
+            {
+                id: 13,
+                question: "Kur'an-ı Kerim'de insanın doğadaki bir canlıyı izleyerek bilgi edindiği ilk örnek hangisidir?",
+                correct: "Adem'in (as) oğlu, kardeşini kaybettikten sonra Allah'ın gönderdiği bir kargayı izlemiş ve toprağı eşeleyen bu kargadan ölü gömmeyi (defin yapmayı) öğrenmiştir.",
+                distractors: [
+                    "Karıncayı izleyerek yuva yapmayı öğrenmesi.",
+                    "Arıyı izleyerek bal yapmayı öğrenmesi.",
+                    "Kartalı izleyerek avlanmayı öğrenmesi."
+                ]
+            },
+            {
+                id: 14,
+                question: "İçimizde kıskançlık veya öfke gibi kötü bir duygu hissettiğimizde ne yapmalıyız?",
+                correct: "Nefsimizi terbiye etmeli, duygu ve davranışlarımızı kontrol altına almalı ve bu kötü huydan kurtulmak için Allah'a dua etmeliyiz.",
+                distractors: [
+                    "Öfkemizi derhal muhatabımıza zarar vererek çıkarmalıyız.",
+                    "Kıskandığımız kişinin mallarını elinden almalıyız.",
+                    "Bu kötü duyguyu içimizde büyütüp intikam planlamalıyız."
+                ]
+            },
+            {
+                id: 15,
+                question: "Katil olan kardeşe benzememek için nelere dikkat etmeliyiz?",
+                correct: "Kıskançlıktan kurtulup sahip olduklarımıza şükretmeli, öfke anında sakin kalmalı, hiçbir günahı küçük görmemeli ve dua etmeliyiz.",
+                distractors: [
+                    "Hakkımız olmayan şeyleri zorla istemeliyiz.",
+                    "Bir anlık öfkeyle hareket etmekten kaçınmamalıyız.",
+                    "Hatalarımızda ısrarcı olup başkalarını suçlamalıyız."
+                ]
+            },
+            {
+                id: 16,
+                question: "Yeryüzünde ilk şirk nasıl başladı?",
+                correct: "Salih, Allah'ı hatırlatan insanlar vefat edince resimleri/heykelleri yapıldı. Nesiller değiştikçe amaç unutuldu ve şeytanın vesvesesiyle o heykellere ibadet edilmeye başlandı.",
+                distractors: [
+                    "İnsanların aniden putlara tapmak istemesiyle.",
+                    "Gökten put taşlarının düşmesiyle.",
+                    "Başka bir kavmin zorla put getirmesiyle."
+                ]
+            },
+            {
+                id: 17,
+                question: "Nuh (as) kavmini ilk neye davet etmiştir?",
+                correct: "La ilahe illallah'a (Allah'a kulluk etmeye ve O'ndan başka ilah olmadığına) davet etmiştir. (Araf Suresi 59)",
+                distractors: [
+                    "Büyük binalar ve saraylar yapmaya",
+                    "Gemi ticaretini öğrenmeye",
+                    "Putların sayısını artırmaya"
+                ]
+            },
+            {
+                id: 18,
+                question: "Nuh (as) kaç yıl davet yaptı ve ailesinden iman etmeyen kişi kimdi?",
+                correct: "950 yıl davet yaptı ve oğlu inananlardan olmadı, tufanda boğulanlardan oldu.",
+                distractors: [
+                    "100 yıl davet yaptı, tüm ailesi inandı.",
+                    "500 yıl davet yaptı, amcası inkar etti.",
+                    "40 yıl davet yaptı, hiç kimse inkar etmedi."
+                ]
+            },
+            {
+                id: 19,
+                question: "Nuh (as)'ın kavmi davetine nasıl karşılık verdi?",
+                correct: "Alay edip dalga geçtiler, yalancı ve sapık olmakla suçladılar, insan olmasına itiraz ettiler, inanan zayıfları küçümsediler ve öldürmekle tehdit ettiler.",
+                distractors: [
+                    "Daveti sevinçle karşılayıp hemen iman ettiler.",
+                    "Gemi yapımına yardım edip malzemeleri getirdiler.",
+                    "Nuh (as)'a altın ve gümüş teklif ettiler."
+                ]
+            },
+            {
+                id: 20,
+                question: "Nuh (as)'ın mücadelesi nasıl sonuçlanmıştır?",
+                correct: "Allah bir gemi yapmasını emretti; tufan başladığında inananlar ve her hayvandan birer çift kurtuldu, inkar eden kavim ise sular altında kalarak helak oldu.",
+                distractors: [
+                    "İnkar eden kavim pişman olup tövbe etti.",
+                    "Büyük bir kuraklık çıktı ve herkes başka yere göç etti.",
+                    "Tufan olmadı, kavim kendi kendine yok oldu."
+                ]
+            },
+            {
+                id: 21,
+                question: "İbrahim (as), kalbinin tam anlamıyla tatmin olması için Yüce Allah'tan neyi göstermesini istemiştir ve ona ne emredilmiştir?",
+                correct: "Ölüleri nasıl dirilttiğini göstermesini istemiştir. Allah ona 4 kuş almasını, alıştırip parçalara ayırarak dağlara koymasını ve sonra çağırmasını emretmiştir.",
+                distractors: [
+                    "Cennetin kapılarını göstermesini istemiştir.",
+                    "Güneşin nasıl doğduğunu sormuştur.",
+                    "Meleklerin kanatlarını görmek istemiştir."
+                ]
+            },
+            {
+                id: 22,
+                question: "İbrahim (as) gece gökyüzünde batan yıldız, ay ve güneşi gördükten sonra ne söylemiştir?",
+                correct: "'Ben batanları (kaybolup gidenleri) sevmem.' demiştir.",
+                distractors: [
+                    "'Güneş en büyük ilahımızdır' demiştir.",
+                    "'Ay ve yıldızlar bizi yönetir' demiştir.",
+                    "'Gökyüzü sonsuza kadar kalıcıdır' demiştir."
+                ]
+            },
+            {
+                id: 23,
+                question: "Babası Azer kendisini taşlamakla tehdit ettiği halde İbrahim (as) nasıl bir üslup sergilemiştir?",
+                correct: "Asla öfkelenmemiş, saygısını bozmamış; 'Selam olsun sana! Senin için Rabbimden bağışlanma dileyeceğim' diyerek nezaket, merhamet ve edep göstermektir.",
+                distractors: [
+                    "Babasını azarlayıp evi derhal terk etmiştir.",
+                    "Babasına beddua edip öfkelenmiştir.",
+                    "Babasının putlarını babasına karşı silah olarak kullanmıştır."
+                ]
+            },
+            {
+                id: 24,
+                question: "İbrahim (as) putlara tapan kavmine hangi soruları sormuş, kavmi nasıl karşılık vermiştir?",
+                correct: "'Dua ettiğinizde duyuyorlar mı? Fayda veya zararları var mı?' sormuş; kavmi ise mantıklı cevap veremeyip 'Atalarımızı böyle yaparken bulduk' demiştir.",
+                distractors: [
+                    "'Putları kaça sattınız?' sormuş; onlar 'Çok pahalı' demiştir.",
+                    "'Putları kim yaptı?' sormuş; onlar 'Biz yaptık' demiştir.",
+                    "'Putlar ne zaman konuşacak?' sormuş; onlar 'Hiçbir zaman' demiştir."
+                ]
+            },
+            {
+                id: 25,
+                question: "'Allah İbrahim'i halil edindi' (Nisa Suresi 125) ayetindeki Halil ne demektir?",
+                correct: "Dost demektir (Allah İbrahim'i dost edinmiştir).",
+                distractors: [
+                    "Hükümdar demektir.",
+                    "Güçlü savaşçı demektir.",
+                    "Elçi temsilcisi demektir."
+                ]
+            }
+        ];
+
+        // Game Configuration & State
+        let playerName = "";
+        let currentGameMode = 'test'; 
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let streak = 0;
+        let passRights = 3; // 3 Pass rights for Card mode
+        let correctAnswersCount = 0;
+        let isAnswered = false;
+        let cardFlipped = false;
+
+        // Timer System Variables
+        let timerDuration = 20; // Default 20 seconds for Test mode
+        let currentSecondsLeft = 20;
+        let timerInterval = null;
+        let userAnswersLog = []; // For End Game Review
+
+        // Timer Duration Selection
+        function setTimerDuration(seconds) {
+            timerDuration = seconds;
+            document.getElementById('timerValLabel').innerText = `${seconds} Saniye`;
+            
+            document.querySelectorAll('.time-opt-btn').forEach(btn => {
+                if (parseInt(btn.dataset.time) === seconds) {
+                    btn.className = "time-opt-btn py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold border border-emerald-400 transition-all shadow-md shadow-emerald-500/20";
+                } else {
+                    btn.className = "time-opt-btn py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-bold border border-slate-600 transition-all text-slate-300";
+                }
+            });
+        }
+
+        function startTimer() {
+            stopTimer();
+            // Test modunda seçilen süre, Kartlar modunda ise sabit 60 saniye uygulanır
+            currentSecondsLeft = currentGameMode === 'card' ? 60 : timerDuration;
+            updateTimerUI();
+
+            timerInterval = setInterval(() => {
+                currentSecondsLeft--;
+                updateTimerUI();
+
+                if (currentSecondsLeft <= 3 && currentSecondsLeft > 0) {
+                    playSound('tick');
+                }
+
+                if (currentSecondsLeft <= 0) {
+                    stopTimer();
+                    handleTimeout();
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        function updateTimerUI() {
+            const timerCircle = document.getElementById('timerCircle');
+            const timerText = document.getElementById('timerText');
+            if (!timerCircle || !timerText) return;
+
+            timerText.innerText = currentSecondsLeft;
+
+            const maxSecs = currentGameMode === 'card' ? 60 : timerDuration;
+            const fullDash = 81.68;
+            const offset = fullDash - (currentSecondsLeft / maxSecs) * fullDash;
+            timerCircle.style.strokeDashoffset = offset;
+
+            if (currentSecondsLeft <= 5) {
+                timerCircle.setAttribute('class', 'timer-ring-circle text-rose-500 font-bold');
+            } else {
+                timerCircle.setAttribute('class', 'timer-ring-circle text-amber-400');
+            }
+        }
+
+        // Shuffle Array
+        function shuffleArray(array) {
+            const arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        // Shuffled Question Set for Current Session
+        let shuffledQuestions = [];
+
+        function startGame(mode) {
+            const nameInput = document.getElementById('playerNameInput');
+            const nameErr = document.getElementById('nameErrorMsg');
+            playerName = nameInput.value.trim();
+
+            if (!playerName) {
+                nameErr.classList.remove('hidden');
+                nameInput.classList.add('border-rose-500');
+                return;
+            }
+
+            nameErr.classList.add('hidden');
+            nameInput.classList.remove('border-rose-500');
+
+            currentGameMode = mode;
+            currentQuestionIndex = 0;
+            score = 0;
+            streak = 0;
+            passRights = 3;
+            correctAnswersCount = 0;
+            userAnswersLog = [];
+
+            // Shuffle full set for fresh order every play
+            shuffledQuestions = shuffleArray(questionsData);
+
+            document.getElementById('welcomeScreen').classList.add('hidden');
+            document.getElementById('resultScreen').classList.add('hidden');
+            document.getElementById('gameplayScreen').classList.remove('hidden');
+
+            document.getElementById('playerDisplayName').innerText = playerName;
+            document.getElementById('globalScoreText').innerText = `0 Puan`;
+            document.getElementById('currentScore').innerText = `0`;
+            document.getElementById('comboCount').innerText = `0`;
+
+            if (mode === 'test') {
+                document.getElementById('testQuestionContainer').classList.remove('hidden');
+                document.getElementById('cardQuestionContainer').classList.add('hidden');
+            } else {
+                document.getElementById('testQuestionContainer').classList.add('hidden');
+                document.getElementById('cardQuestionContainer').classList.remove('hidden');
+                document.getElementById('passCountText').innerText = `${passRights} Pas`;
+            }
+
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            if (currentQuestionIndex >= shuffledQuestions.length) {
+                endGame();
+                return;
+            }
+
+            isAnswered = false;
+            cardFlipped = false;
+            const q = shuffledQuestions[currentQuestionIndex];
+
+            // Progress Indicators
+            const progressPct = ((currentQuestionIndex + 1) / shuffledQuestions.length) * 100;
+            document.getElementById('progressBar').style.width = `${progressPct}%`;
+            document.getElementById('currentQNum').innerText = currentQuestionIndex + 1;
+            document.getElementById('progressText').innerText = currentQuestionIndex + 1;
+
+            if (currentGameMode === 'test') {
+                document.getElementById('questionCategory').innerText = `SORU ${currentQuestionIndex + 1}`;
+                document.getElementById('questionText').innerText = q.question;
+                document.getElementById('feedbackBanner').classList.add('hidden');
+
+                // Shuffle Options dynamically
+                const allOpts = shuffleArray([
+                    { text: q.correct, isCorrect: true },
+                    ...q.distractors.map(d => ({ text: d, isCorrect: false }))
+                ]);
+
+                const container = document.getElementById('optionsContainer');
+                container.innerHTML = '';
+
+                const optLabels = ['A', 'B', 'C', 'D'];
+                allOpts.forEach((opt, idx) => {
+                    const btn = document.createElement('button');
+                    btn.className = "w-full p-4 rounded-xl bg-slate-900/80 hover:bg-slate-700/80 border border-slate-700/80 text-left font-medium text-xs sm:text-sm text-slate-200 transition-all flex items-start space-x-3 active:scale-[0.99] group";
+                    btn.onclick = () => handleTestAnswer(opt.isCorrect, btn, q, opt.text);
+                    btn.innerHTML = `
+                        <span class="w-6 h-6 rounded-lg bg-slate-800 text-slate-400 group-hover:bg-emerald-500 group-hover:text-slate-950 font-bold flex items-center justify-center shrink-0 text-xs transition-colors">${optLabels[idx]}</span>
+                        <span class="pt-0.5 leading-relaxed">${opt.text}</span>
+                    `;
+                    container.appendChild(btn);
+                });
+
+                startTimer();
+            } else {
+                // Card Mode
+                document.getElementById('cardQuestionText').innerText = q.question;
+                document.getElementById('cardAnswerText').innerText = q.correct;
+                document.getElementById('flashCardInner').classList.remove('flipped');
+                document.getElementById('cardEvaluationBtns').classList.add('opacity-50', 'pointer-events-none');
+
+                startTimer();
+            }
+        }
+
+        function handleTestAnswer(isCorrect, btnElement, qObj, chosenText) {
+            if (isAnswered) return;
+            isAnswered = true;
+            stopTimer();
+
+            const container = document.getElementById('optionsContainer');
+            const buttons = container.querySelectorAll('button');
+            buttons.forEach(b => b.disabled = true);
+
+            userAnswersLog.push({
+                question: qObj.question,
+                correct: qObj.correct,
+                userChoice: chosenText,
+                isCorrect: isCorrect
+            });
+
+            const banner = document.getElementById('feedbackBanner');
+            const icon = document.getElementById('feedbackIcon');
+            const title = document.getElementById('feedbackTitle');
+            const detail = document.getElementById('feedbackDetail');
+
+            banner.classList.remove('hidden');
+
+            if (isCorrect) {
+                playSound('correct');
+                streak++;
+                correctAnswersCount++;
+                btnElement.classList.remove('bg-slate-900/80', 'border-slate-700/80');
+                btnElement.classList.add('bg-emerald-500/20', 'border-emerald-500', 'text-emerald-300');
+
+                const timeBonus = currentSecondsLeft * 10;
+                const comboBonus = (streak - 1) * 50;
+                const pointsGained = 100 + timeBonus + comboBonus;
+                score += pointsGained;
+
+                banner.className = "p-4 rounded-xl border flex items-center justify-between transition-all bg-emerald-950/80 border-emerald-500/50 text-emerald-300";
+                icon.className = "fa-solid fa-circle-check text-2xl text-emerald-400";
+                title.innerText = `Tebrikler, Doğru Cevap! (+${pointsGained} Puan)`;
+                detail.innerText = streak > 1 ? `${streak}x Seri Yakaladınız! 🔥` : `Hızlı cevap bonusu eklendi.`;
+            } else {
+                playSound('wrong');
+                streak = 0;
+                btnElement.classList.remove('bg-slate-900/80', 'border-slate-700/80');
+                btnElement.classList.add('bg-rose-500/20', 'border-rose-500', 'text-rose-300');
+
+                banner.className = "p-4 rounded-xl border flex items-center justify-between transition-all bg-rose-950/80 border-rose-500/50 text-rose-300";
+                icon.className = "fa-solid fa-circle-xmark text-2xl text-rose-400";
+                title.innerText = "Maalesef Yanlış Cevap!";
+                detail.innerText = `Doğru cevap: ${qObj.correct}`;
+            }
+
+            document.getElementById('currentScore').innerText = score;
+            document.getElementById('globalScoreText').innerText = `${score} Puan`;
+            document.getElementById('comboCount').innerText = streak;
+        }
+
+        function handleTimeout() {
+            if (isAnswered) return;
+            isAnswered = true;
+            playSound('timeout');
+            streak = 0;
+            document.getElementById('comboCount').innerText = 0;
+
+            const qObj = shuffledQuestions[currentQuestionIndex];
+            userAnswersLog.push({
+                question: qObj.question,
+                correct: qObj.correct,
+                userChoice: "Süre Doldu",
+                isCorrect: false
+            });
+
+            if (currentGameMode === 'test') {
+                const container = document.getElementById('optionsContainer');
+                container.querySelectorAll('button').forEach(b => b.disabled = true);
+
+                const banner = document.getElementById('feedbackBanner');
+                banner.classList.remove('hidden');
+                banner.className = "p-4 rounded-xl border flex items-center justify-between transition-all bg-rose-950/80 border-rose-500/50 text-rose-300";
+                document.getElementById('feedbackIcon').className = "fa-solid fa-clock text-2xl text-rose-400";
+                document.getElementById('feedbackTitle').innerText = "Süreniz Doldu!";
+                document.getElementById('feedbackDetail').innerText = `Doğru cevap: ${qObj.correct}`;
+            } else {
+                // Flashcard timeout
+                flipCard();
+            }
+        }
+
+        function flipCard() {
+            if (cardFlipped) return;
+            cardFlipped = true;
+            stopTimer();
+            playSound('flip');
+
+            document.getElementById('flashCardInner').classList.add('flipped');
+            document.getElementById('cardEvaluationBtns').classList.remove('opacity-50', 'pointer-events-none');
+        }
+
+        function usePassCard() {
+            if (passRights <= 0) {
+                alert("Pas hakkınız kalmadı!");
+                return;
+            }
+            passRights--;
+            document.getElementById('passCountText').innerText = `${passRights} Pas`;
+            if (passRights <= 0) {
+                document.getElementById('passCardBtn').disabled = true;
+                document.getElementById('passCardBtn').classList.add('opacity-40', 'cursor-not-allowed');
+            }
+            nextQuestion();
+        }
+
+        function rateCard(isKnown) {
+            const qObj = shuffledQuestions[currentQuestionIndex];
+            stopTimer();
+
+            if (isKnown) {
+                playSound('correct');
+                score += 100;
+                correctAnswersCount++;
+            } else {
+                playSound('wrong');
+            }
+
+            userAnswersLog.push({
+                question: qObj.question,
+                correct: qObj.correct,
+                userChoice: isKnown ? "Bildim" : "Bilemedim",
+                isCorrect: isKnown
+            });
+
+            document.getElementById('currentScore').innerText = score;
+            document.getElementById('globalScoreText').innerText = `${score} Puan`;
+            nextQuestion();
+        }
+
+        function nextQuestion() {
+            stopTimer();
+            currentQuestionIndex++;
+            loadQuestion();
+        }
+
+        function endGame() {
+            stopTimer();
+            document.getElementById('gameplayScreen').classList.add('hidden');
+            document.getElementById('resultScreen').classList.remove('hidden');
+
+            const total = shuffledQuestions.length;
+            const pct = Math.round((correctAnswersCount / total) * 100);
+
+            document.getElementById('resultPlayerName').innerText = playerName;
+            document.getElementById('finalScore').innerText = score;
+            document.getElementById('finalCorrect').innerText = `${correctAnswersCount} / ${total}`;
+            document.getElementById('finalAccuracy').innerText = `%${pct}`;
+
+            // Save score to leaderboard automatically
+            saveScoreToLeaderboard(playerName, score, correctAnswersCount, total, currentGameMode);
+
+            // Badge Evaluation
+            const bTitle = document.getElementById('badgeTitle');
+            const bDesc = document.getElementById('badgeDesc');
+            const bIcon = document.getElementById('badgeIcon');
+
+            if (pct >= 90) {
+                bTitle.innerText = "Kıssa Allamesi 🌟";
+                bDesc.innerText = "Kur'an kıssalarını eksiksiz öğrendiniz, mükemmel bir başarı!";
+                bIcon.innerHTML = `<i class="fa-solid fa-crown text-amber-400"></i>`;
+            } else if (pct >= 70) {
+                bTitle.innerText = "Kıssa Muhafızı 🛡️";
+                bDesc.innerText = "Gayet başarılı! Kıssalardan ibret dolu dersler çıkardınız.";
+                bIcon.innerHTML = `<i class="fa-solid fa-shield-halved text-emerald-400"></i>`;
+            } else {
+                bTitle.innerText = "Kıssa Talebesi 📖";
+                bDesc.innerText = "Güzel bir başlangıç! Bir kez daha oynayarak bilgilerinizi pekiştirebilirsiniz.";
+                bIcon.innerHTML = `<i class="fa-solid fa-book text-teal-400"></i>`;
+            }
+
+            // Confetti effect
+            try {
+                confetti({
+                    particleCount: 100,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+            } catch (e) {}
+
+            renderReviewSection();
+        }
+
+        function renderReviewSection() {
+            const container = document.getElementById('reviewContainer');
+            container.innerHTML = '';
+
+            userAnswersLog.forEach((item, idx) => {
+                const div = document.createElement('div');
+                div.className = `p-3 rounded-lg border text-xs space-y-1 ${
+                    item.isCorrect 
+                        ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200' 
+                        : 'bg-rose-950/40 border-rose-500/30 text-rose-200'
+                }`;
+                div.innerHTML = `
+                    <div class="font-bold text-white">${idx + 1}. ${item.question}</div>
+                    <div><span class="opacity-75">Doğru Cevap:</span> ${item.correct}</div>
+                    <div><span class="opacity-75">Seçiminiz:</span> <span class="${item.isCorrect ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}">${item.userChoice}</span></div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function toggleAnswerReview() {
+            const container = document.getElementById('reviewContainer');
+            container.classList.toggle('hidden');
+        }
+
+        function resetToHome() {
+            stopTimer();
+            document.getElementById('gameplayScreen').classList.add('hidden');
+            document.getElementById('resultScreen').classList.add('hidden');
+            document.getElementById('welcomeScreen').classList.remove('hidden');
+        }
+
+        function restartGame() {
+            startGame(currentGameMode);
+        }
+
+        function confirmExit() {
+            if (confirm("Yarışmadan çıkmak istediğinize emin misiniz? Puanınız kaydedilmeyecektir.")) {
+                resetToHome();
+            }
+        }
+    </script>
+</body>
+</html>
