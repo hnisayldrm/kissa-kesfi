@@ -20,14 +20,17 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-<!-- Kıssa Keşfi: ortak skor sistemi -->
+<!-- Kıssa Keşfi: Skor Yönetimi ve Firebase Entegrasyonu -->
     <script>
+        // Global Durum Değişkenleri
         window.globalScoresList = [];
         window.isLeaderboardModalOpen = false;
+        window.activeLeaderboardTab = 'daily'; // 'daily' veya 'all'
+
         let leaderboardDb = null;
         let firebaseReady = false;
         let pendingScores = [];
-        const SCORE_PATH = 'scores'; // 👈 Eksik olan yol eklendi
+        const SCORE_PATH = 'scores';
 
         const currentUserId = (() => {
             try {
@@ -57,10 +60,122 @@
             return `${y}-${m}-${d}`;
         }
 
-        function refreshLeaderboardUI() {
-            if (window.isLeaderboardModalOpen && typeof window.renderLeaderboardTable === 'function') {
-                window.renderLeaderboardTable();
+        function getYesterdayDateKey() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            return localDateKey(yesterday);
+        }
+
+        // Dünün Şampiyonu Kartını Güncelleme
+        function updateYesterdayWinnerUI() {
+            const allScores = window.globalScoresList || [];
+            const winnerCard = document.getElementById('yesterdayWinnerCard');
+            if (!winnerCard) return;
+
+            if (allScores.length === 0) {
+                winnerCard.classList.add('hidden');
+                return;
             }
+
+            const yesterdayKey = getYesterdayDateKey();
+
+            // 1. Dünün skorlarını ara
+            let targetScores = allScores.filter(item => item.dateKey === yesterdayKey);
+            let labelText = 'Dün';
+
+            // 2. Düne ait kayıt yoksa genel listedeki en yüksek skorlu kişiyi al
+            if (targetScores.length === 0) {
+                targetScores = [...allScores];
+                labelText = 'Son Şampiyon';
+            }
+
+            const topWinner = targetScores.sort((a, b) => Number(b.score) - Number(a.score))[0];
+
+            if (topWinner && topWinner.name) {
+                const nameEl = document.getElementById('winnerName');
+                const scoreEl = document.getElementById('winnerScore');
+                const dateBadge = document.getElementById('winnerDate');
+
+                if (nameEl) nameEl.innerText = topWinner.name;
+                if (scoreEl) scoreEl.innerText = `${topWinner.score} Puan (${topWinner.correct || ''})`;
+                if (dateBadge) dateBadge.innerText = labelText;
+
+                winnerCard.classList.remove('hidden');
+            }
+        }
+
+        // Tabloyu Ekrana Yazdırma
+        function renderLeaderboardTable() {
+            const list = getLeaderboard();
+            const tbody = document.getElementById('leaderboardTableBody');
+            const noMsg = document.getElementById('noLeaderboardMsg');
+            
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (!list || list.length === 0) {
+                if (noMsg) noMsg.classList.remove('hidden');
+                return;
+            }
+
+            if (noMsg) noMsg.classList.add('hidden');
+
+            list.slice(0, 30).forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.className = index % 2 === 0 ? 'bg-slate-900/60' : 'bg-slate-800/40';
+
+                let medal = `${index + 1}`;
+                if (index === 0) medal = `<i class="fa-solid fa-medal text-amber-400 text-base"></i>`;
+                else if (index === 1) medal = `<i class="fa-solid fa-medal text-slate-300 text-base"></i>`;
+                else if (index === 2) medal = `<i class="fa-solid fa-medal text-amber-600 text-base"></i>`;
+
+                tr.innerHTML = `
+                    <td class="py-3 px-3 font-bold text-center">${medal}</td>
+                    <td class="py-3 px-3 font-bold text-white flex items-center space-x-1.5">
+                        <span>${item.name}</span>
+                        ${index === 0 ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">1. Sıra</span>' : ''}
+                    </td>
+                    <td class="py-3 px-3 font-extrabold text-amber-300">${item.score}</td>
+                    <td class="py-3 px-3 text-emerald-400 font-semibold">${item.correct}</td>
+                    <td class="py-3 px-3 text-slate-400">${item.mode || 'Test'}</td>
+                    <td class="py-3 px-3 text-slate-500 text-[11px]">${item.dateStr || ''}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function refreshLeaderboardUI() {
+            updateYesterdayWinnerUI();
+            if (window.isLeaderboardModalOpen) {
+                renderLeaderboardTable();
+            }
+        }
+
+        function getLeaderboard() {
+            const allScores = window.globalScoresList || [];
+            if (window.activeLeaderboardTab === 'daily') {
+                const todayKey = localDateKey();
+                const dailyList = allScores.filter(item => item.dateKey === todayKey);
+                return dailyList.length > 0 ? dailyList : allScores;
+            }
+            return allScores;
+        }
+
+        function setLeaderboardTab(tab) {
+            window.activeLeaderboardTab = tab;
+            const btnDaily = document.getElementById('tabDailyBtn');
+            const btnAll = document.getElementById('tabAllBtn');
+            
+            if (btnDaily && btnAll) {
+                if (tab === 'daily') {
+                    btnDaily.className = "px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow-md transition-colors";
+                    btnAll.className = "px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors";
+                } else {
+                    btnAll.className = "px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow-md transition-colors";
+                    btnDaily.className = "px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors";
+                }
+            }
+            renderLeaderboardTable();
         }
 
         function saveEntryToFirebase(entry) {
@@ -71,47 +186,6 @@
             leaderboardDb.ref(SCORE_PATH).push(entry).catch(error => {
                 console.error('Skor kaydedilemedi:', error);
             });
-        }
-
-        function getYesterdayDateKey() {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const y = yesterday.getFullYear();
-            const m = String(yesterday.getMonth() + 1).padStart(2, '0');
-            const d = String(yesterday.getDate()).padStart(2, '0');
-            return `${y}-${m}-${d}`;
-        }
-
-        function updateYesterdayWinnerUI() {
-            const allScores = window.globalScoresList || [];
-            const winnerCard = document.getElementById('yesterdayWinnerCard');
-            if (!winnerCard || allScores.length === 0) return;
-
-            const yesterdayKey = getYesterdayDateKey();
-
-            // 1. Dünün skorlarını ara
-            let targetScores = allScores.filter(item => item.dateKey === yesterdayKey);
-            let labelText = 'Dün';
-
-            // 2. Eğer dünün tarihiyle eşleşen skor yoksa genel listedeki 1.yi al
-            if (targetScores.length === 0) {
-                targetScores = allScores;
-                labelText = 'Son Şampiyon';
-            }
-
-            const topWinner = targetScores.sort((a, b) => Number(b.score) - Number(a.score))[0];
-
-            if (topWinner && topWinner.name) {
-                document.getElementById('winnerName').innerText = topWinner.name;
-                document.getElementById('winnerScore').innerText = `${topWinner.score} Puan (${topWinner.correct || ''})`;
-
-                const dateBadge = document.getElementById('winnerDate');
-                if (dateBadge) {
-                    dateBadge.innerText = labelText;
-                }
-
-                winnerCard.classList.remove('hidden');
-            }
         }
 
         function initLiveLeaderboardSync() {
@@ -129,8 +203,6 @@
                         });
                         
                         window.globalScoresList = scores.sort((a, b) => Number(b.score) - Number(a.score));
-                        
-                        updateYesterdayWinnerUI();
                         refreshLeaderboardUI();
                     }, error => console.error('Skorlar okunamadı:', error));
 
@@ -157,35 +229,36 @@
             saveEntryToFirebase(entry);
         };
 
+        window.saveScoreToLeaderboard = window.saveScoreToCloud;
+        window.renderLeaderboardTable = renderLeaderboardTable;
+
+        function openLeaderboardModal() {
+            window.isLeaderboardModalOpen = true;
+            renderLeaderboardTable();
+            const modal = document.getElementById('leaderboardModal');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function closeLeaderboardModal() {
+            window.isLeaderboardModalOpen = false;
+            const modal = document.getElementById('leaderboardModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        tailwind = {
+            config: {
+                theme: {
+                    extend: {
+                        colors: {
+                            slate: { 850: '#131f37' }
+                        }
+                    }
+                }
+            }
+        };
+
         window.addEventListener('DOMContentLoaded', initLiveLeaderboardSync);
     </script>
-    <script>
-        // Leaderboard Management & Daily Filter
-        if (!window.globalScoresList) {
-            window.globalScoresList = [];
-        }
-        window.isLeaderboardModalOpen = false;
-        window.activeLeaderboardTab = 'daily'; // 'daily' or 'all'
-
-       function getLeaderboard() {
-    const allScores = window.globalScoresList || [];
-    
-    if (window.activeLeaderboardTab === 'daily') {
-        const now = new Date();
-        const todayKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-        const dailyList = allScores.filter(item => item.dateKey === todayKey);
-        
-        // Eğer bugün oynayan varsa bugünü, yoksa tüm eski skorları gösterir
-        return dailyList.length > 0 ? dailyList : allScores;
-    }
-    
-    return allScores;
-}
-        function setLeaderboardTab(tab) {
-            window.activeLeaderboardTab = tab;
-            const btnDaily = document.getElementById('tabDailyBtn');
-            const btnAll = document.getElementById('tabAllBtn');
-            
             if (tab === 'daily') {
                 btnDaily.className = "px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs shadow-md transition-colors";
                 btnAll.className = "px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors";
