@@ -86,31 +86,36 @@ function getYesterdayDateKey() {
 // Dünün birincisini bulup ana sayfadaki karta basma
 function updateYesterdayWinnerUI() {
     const allScores = window.globalScoresList || [];
+    const winnerCard = document.getElementById('yesterdayWinnerCard');
+    if (!winnerCard || allScores.length === 0) return;
+
     const yesterdayKey = getYesterdayDateKey();
 
-    // Sadece dünün skorlarını filtrele
-    const yesterdayScores = allScores.filter(item => item.dateKey === yesterdayKey);
-    const winnerCard = document.getElementById('yesterdayWinnerCard');
-    
-    if (!winnerCard) return;
+    // 1. Dünün skorlarını ara
+    let targetScores = allScores.filter(item => item.dateKey === yesterdayKey);
+    let labelText = 'Dün';
 
-    if (yesterdayScores.length > 0) {
-        // Puanı en yüksek olan dünün 1.si
-        const topWinner = yesterdayScores.sort((a, b) => Number(b.score) - Number(a.score))[0];
+    // 2. Eğer dünün tarihiyle eşleşen skor bulunamazsa tüm listedeki 1. kişiyi al
+    if (targetScores.length === 0) {
+        targetScores = allScores;
+        labelText = 'Son Şampiyon';
+    }
 
-        document.getElementById('winnerName').innerText = topWinner.name || 'Öğrenci';
-        document.getElementById('winnerScore').innerText = `${topWinner.score} Puan (${topWinner.correct})`;
-        
-        const yesterdayDate = new Date();
-        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-        document.getElementById('winnerDate').innerText = yesterdayDate.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
-        
+    const topWinner = targetScores.sort((a, b) => Number(b.score) - Number(a.score))[0];
+
+    if (topWinner && topWinner.name) {
+        document.getElementById('winnerName').innerText = topWinner.name;
+        document.getElementById('winnerScore').innerText = `${topWinner.score} Puan (${topWinner.correct || ''})`;
+
+        const dateBadge = document.getElementById('winnerDate');
+        if (dateBadge) {
+            dateBadge.innerText = labelText;
+        }
+
         winnerCard.classList.remove('hidden');
-    } else {
-        winnerCard.classList.add('hidden');
     }
 }
-
+  
 // Canlı veri senkronizasyonu ve şampiyon kartı tetikleme
 function initLiveLeaderboardSync() {
     try {
@@ -180,16 +185,20 @@ function initLiveLeaderboardSync() {
         window.isLeaderboardModalOpen = false;
         window.activeLeaderboardTab = 'daily'; // 'daily' or 'all'
 
-        function getLeaderboard() {
-            const allScores = window.globalScoresList || [];
-            if (window.activeLeaderboardTab === 'daily') {
-                const now = new Date();
-                const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                return allScores.filter(item => item.dateKey === todayKey);
-            }
-            return allScores;
-        }
-
+       function getLeaderboard() {
+    const allScores = window.globalScoresList || [];
+    
+    if (window.activeLeaderboardTab === 'daily') {
+        const now = new Date();
+        const todayKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+        const dailyList = allScores.filter(item => item.dateKey === todayKey);
+        
+        // Eğer bugün oynayan varsa bugünü, yoksa tüm eski skorları gösterir
+        return dailyList.length > 0 ? dailyList : allScores;
+    }
+    
+    return allScores;
+}
         function setLeaderboardTab(tab) {
             window.activeLeaderboardTab = tab;
             const btnDaily = document.getElementById('tabDailyBtn');
