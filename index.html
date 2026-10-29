@@ -20,13 +20,15 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-    <!-- Kıssa Keşfi: ortak skor sistemi -->
+<!-- Kıssa Keşfi: ortak skor sistemi -->
     <script>
         window.globalScoresList = [];
         window.isLeaderboardModalOpen = false;
         let leaderboardDb = null;
         let firebaseReady = false;
         let pendingScores = [];
+        const SCORE_PATH = 'scores'; // 👈 Eksik olan yol eklendi
+
         const currentUserId = (() => {
             try {
                 let id = localStorage.getItem('kissa_kesfi_dev_id');
@@ -40,7 +42,6 @@
             }
         })();
 
-        // Firebase Console > Project settings > Your apps bölümündeki bilgilerle doldurun.
         const firebaseConfig = {
             apiKey: "AIzaSyCue6mlwd7CotsHvQOhRnLXDkkUWQ395NE",
             authDomain: "kissa-kesfi-oyun.firebaseapp.com",
@@ -67,87 +68,79 @@
                 pendingScores.push(entry);
                 return;
             }
-            leaderboardDb.ref('scores').push(entry).catch(error => {
+            leaderboardDb.ref(SCORE_PATH).push(entry).catch(error => {
                 console.error('Skor kaydedilemedi:', error);
-                alert('Skor ortak tabloya kaydedilemedi. İnternet bağlantısını ve Firebase ayarlarını kontrol edin.');
             });
         }
 
-        // Dünün tarih anahtarını alma (Örn: "2026-10-28")
-function getYesterdayDateKey() {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const y = yesterday.getFullYear();
-    const m = String(yesterday.getMonth() + 1).padStart(2, '0');
-    const d = String(yesterday.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
-// Dünün birincisini bulup ana sayfadaki karta basma
-function updateYesterdayWinnerUI() {
-    const allScores = window.globalScoresList || [];
-    const winnerCard = document.getElementById('yesterdayWinnerCard');
-    if (!winnerCard || allScores.length === 0) return;
-
-    const yesterdayKey = getYesterdayDateKey();
-
-    // 1. Dünün skorlarını ara
-    let targetScores = allScores.filter(item => item.dateKey === yesterdayKey);
-    let labelText = 'Dün';
-
-    // 2. Eğer dünün tarihiyle eşleşen skor bulunamazsa tüm listedeki 1. kişiyi al
-    if (targetScores.length === 0) {
-        targetScores = allScores;
-        labelText = 'Son Şampiyon';
-    }
-
-    const topWinner = targetScores.sort((a, b) => Number(b.score) - Number(a.score))[0];
-
-    if (topWinner && topWinner.name) {
-        document.getElementById('winnerName').innerText = topWinner.name;
-        document.getElementById('winnerScore').innerText = `${topWinner.score} Puan (${topWinner.correct || ''})`;
-
-        const dateBadge = document.getElementById('winnerDate');
-        if (dateBadge) {
-            dateBadge.innerText = labelText;
+        function getYesterdayDateKey() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const y = yesterday.getFullYear();
+            const m = String(yesterday.getMonth() + 1).padStart(2, '0');
+            const d = String(yesterday.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
         }
 
-        winnerCard.classList.remove('hidden');
-    }
-}
-  
-// Canlı veri senkronizasyonu ve şampiyon kartı tetikleme
-function initLiveLeaderboardSync() {
-    try {
-        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-        leaderboardDb = firebase.database();
-        
-        firebase.auth().signInAnonymously().then(() => {
-            firebaseReady = true;
-            
-            leaderboardDb.ref(SCORE_PATH).on('value', snapshot => {
-                const scores = [];
-                snapshot.forEach(child => {
-                    scores.push({ id: child.key, ...child.val() });
-                });
-                
-                window.globalScoresList = scores.sort((a, b) => Number(b.score) - Number(a.score));
-                
-                // Dünün birincisi kartını güncelle
-                updateYesterdayWinnerUI();
+        function updateYesterdayWinnerUI() {
+            const allScores = window.globalScoresList || [];
+            const winnerCard = document.getElementById('yesterdayWinnerCard');
+            if (!winnerCard || allScores.length === 0) return;
 
-                if (typeof window.renderLeaderboardTable === 'function') {
-                    window.renderLeaderboardTable();
+            const yesterdayKey = getYesterdayDateKey();
+
+            // 1. Dünün skorlarını ara
+            let targetScores = allScores.filter(item => item.dateKey === yesterdayKey);
+            let labelText = 'Dün';
+
+            // 2. Eğer dünün tarihiyle eşleşen skor yoksa genel listedeki 1.yi al
+            if (targetScores.length === 0) {
+                targetScores = allScores;
+                labelText = 'Son Şampiyon';
+            }
+
+            const topWinner = targetScores.sort((a, b) => Number(b.score) - Number(a.score))[0];
+
+            if (topWinner && topWinner.name) {
+                document.getElementById('winnerName').innerText = topWinner.name;
+                document.getElementById('winnerScore').innerText = `${topWinner.score} Puan (${topWinner.correct || ''})`;
+
+                const dateBadge = document.getElementById('winnerDate');
+                if (dateBadge) {
+                    dateBadge.innerText = labelText;
                 }
-            }, error => console.error('Skorlar okunamadı:', error));
 
-            const queued = pendingScores.splice(0);
-            queued.forEach(saveEntryToFirebase);
-        }).catch(error => console.error('Firebase giriş hatası:', error));
-    } catch (e) { 
-        console.error('Firebase başlatılamadı:', e); 
-    }
-}
+                winnerCard.classList.remove('hidden');
+            }
+        }
+
+        function initLiveLeaderboardSync() {
+            try {
+                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                leaderboardDb = firebase.database();
+                
+                firebase.auth().signInAnonymously().then(() => {
+                    firebaseReady = true;
+                    
+                    leaderboardDb.ref(SCORE_PATH).on('value', snapshot => {
+                        const scores = [];
+                        snapshot.forEach(child => {
+                            scores.push({ id: child.key, ...child.val() });
+                        });
+                        
+                        window.globalScoresList = scores.sort((a, b) => Number(b.score) - Number(a.score));
+                        
+                        updateYesterdayWinnerUI();
+                        refreshLeaderboardUI();
+                    }, error => console.error('Skorlar okunamadı:', error));
+
+                    const queued = pendingScores.splice(0);
+                    queued.forEach(saveEntryToFirebase);
+                }).catch(error => console.error('Firebase giriş hatası:', error));
+            } catch (e) { 
+                console.error('Firebase başlatılamadı:', e); 
+            }
+        }
 
         window.saveScoreToCloud = function(name, scoreVal, correct, total, mode) {
             const now = new Date();
@@ -161,22 +154,11 @@ function initLiveLeaderboardSync() {
                 dateKey: localDateKey(now),
                 dateStr: now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
             };
-            // Kaydetme beklerken oyuncunun kendi ekranında da sonucu göster.
-            window.globalScoresList.push(entry);
-            window.globalScoresList.sort((a, b) => Number(b.score) - Number(a.score));
-            refreshLeaderboardUI();
             saveEntryToFirebase(entry);
-        };
-
-        // Ortak skorları tüm öğrencilerin silememesi için toplu temizleme bu sürümde kapalıdır.
-        // Gerçek öğretmen temizleme yetkisi sunucu tarafında doğrulanmalıdır.
-        window.clearCloudLeaderboard = function() {
-            alert('Ortak skor tablosunu temizleme bu sürümde güvenlik için kapalıdır. Öğretmen yetkisi sunucu tarafında kurulmalıdır.');
         };
 
         window.addEventListener('DOMContentLoaded', initLiveLeaderboardSync);
     </script>
-
     <script>
         // Leaderboard Management & Daily Filter
         if (!window.globalScoresList) {
