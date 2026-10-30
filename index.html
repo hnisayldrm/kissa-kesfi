@@ -26,6 +26,7 @@
         window.globalScoresList = [];
         window.isLeaderboardModalOpen = false;
         window.activeLeaderboardTab = 'daily'; // 'daily' veya 'all'
+        const MAX_DAILY_PLAY_LIMIT = 3;
 
         let leaderboardDb = null;
         let firebaseReady = false;
@@ -60,6 +61,34 @@
             return `${y}-${m}-${d}`;
         }
 
+        // Günlük oynama haklarını kontrol etme ve yönetme
+        function getTodayPlayCount() {
+            try {
+                const key = `kissa_daily_plays_${localDateKey()}`;
+                return Number(localStorage.getItem(key)) || 0;
+            } catch (e) {
+                return 0;
+            }
+        }
+
+        function incrementTodayPlayCount() {
+            try {
+                const key = `kissa_daily_plays_${localDateKey()}`;
+                const current = getTodayPlayCount();
+                localStorage.setItem(key, current + 1);
+                updateDailyRightsUI();
+            } catch (e) {}
+        }
+
+        function updateDailyRightsUI() {
+            const played = getTodayPlayCount();
+            const remaining = Math.max(0, MAX_DAILY_PLAY_LIMIT - played);
+            const el = document.getElementById('dailyRightsText');
+            if (el) {
+                el.innerText = `${remaining} / ${MAX_DAILY_PLAY_LIMIT}`;
+            }
+        }
+
         function getYesterdayDateKey() {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
@@ -70,6 +99,27 @@
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
             return yesterday.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
+        }
+
+        // Aynı isimdeki oyuncuların sadece EN YÜKSEK skorunu tutan filtreleme
+        function filterHighestScoresOnly(scores) {
+            const highestMap = new Map();
+
+            scores.forEach(item => {
+                const normalizedName = (item.name || '').trim().toLowerCase();
+                if (!normalizedName) return;
+
+                if (!highestMap.has(normalizedName)) {
+                    highestMap.set(normalizedName, item);
+                } else {
+                    const existing = highestMap.get(normalizedName);
+                    if (Number(item.score) > Number(existing.score)) {
+                        highestMap.set(normalizedName, item);
+                    }
+                }
+            });
+
+            return Array.from(highestMap.values()).sort((a, b) => Number(b.score) - Number(a.score));
         }
 
         function updateYesterdayWinnerUI() {
@@ -88,12 +138,13 @@
             let targetScores = allScores.filter(item => item.dateKey === yesterdayKey);
             let labelText = getYesterdayFormattedDate();
 
-            // 2. Düne ait kayıt yoksa genel listeden en yüksek skorlu kişiyi al
+            // 2. Düne ait kayıt yoksa genel listeden al
             if (targetScores.length === 0) {
                 targetScores = [...allScores];
             }
 
-            const topWinner = targetScores.sort((a, b) => Number(b.score) - Number(a.score))[0];
+            const uniqueTargetScores = filterHighestScoresOnly(targetScores);
+            const topWinner = uniqueTargetScores[0];
 
             if (topWinner && topWinner.name) {
                 const nameEl = document.getElementById('winnerName');
@@ -157,12 +208,16 @@
 
         function getLeaderboard() {
             const allScores = window.globalScoresList || [];
+            let sourceList = allScores;
+
             if (window.activeLeaderboardTab === 'daily') {
                 const todayKey = localDateKey();
                 const dailyList = allScores.filter(item => item.dateKey === todayKey);
-                return dailyList.length > 0 ? dailyList : allScores;
+                sourceList = dailyList.length > 0 ? dailyList : allScores;
             }
-            return allScores;
+
+            // Sadece tekil en yüksek skorları dök
+            return filterHighestScoresOnly(sourceList);
         }
 
         function setLeaderboardTab(tab) {
@@ -261,7 +316,10 @@
             }
         };
 
-        window.addEventListener('DOMContentLoaded', initLiveLeaderboardSync);
+        window.addEventListener('DOMContentLoaded', () => {
+            initLiveLeaderboardSync();
+            updateDailyRightsUI();
+        });
     </script>
     <style>
         .custom-glow { box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.3); }
@@ -355,13 +413,20 @@
                 </div>
             </div>
 
-            <!-- Player Name Registration Card -->
+            <!-- Player Name Registration Card & Daily Limit Counter -->
             <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 max-w-xl mx-auto text-left space-y-3 shadow-xl">
                 <div class="flex items-center justify-between">
                     <label for="playerNameInput" class="block text-sm font-bold text-slate-200 flex items-center space-x-2">
                         <i class="fa-solid fa-user-pen text-emerald-400"></i>
                         <span>Oyuncu Adı / İsminiz: <span class="text-rose-400">*</span></span>
                     </label>
+
+                    <!-- Günlük Hak Göstergesi -->
+                    <div class="text-xs font-semibold text-slate-300 flex items-center space-x-1.5 bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-700">
+                        <i class="fa-solid fa-gamepad text-emerald-400"></i>
+                        <span>Kalan Hak:</span>
+                        <span id="dailyRightsText" class="font-extrabold text-amber-300">3 / 3</span>
+                    </div>
                 </div>
 
                 <div class="space-y-2">
@@ -369,7 +434,7 @@
                         <input type="text" id="playerNameInput" placeholder="İsminizi yazınız..." maxlength="25" class="w-full bg-slate-900 border border-slate-600 focus:border-emerald-500 rounded-xl px-4 py-3 text-slate-100 font-semibold placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-sm transition-all" />
                         <div id="nameErrorMsg" class="hidden text-xs text-rose-400 mt-1 font-medium flex items-center space-x-1">
                             <i class="fa-solid fa-triangle-exclamation"></i>
-                            <span>Lütfen yarışmaya başlamadan önce buraya isminizi yazınız.</span>
+                            <span id="nameErrorMsgText">Lütfen yarışmaya başlamadan önce buraya isminizi yazınız.</span>
                         </div>
                     </div>
                 </div>
@@ -703,7 +768,7 @@
 
                 <!-- Modal Footer -->
                 <div class="px-6 py-3 border-t border-slate-800 bg-slate-850 flex items-center justify-between text-xs">
-                    <span class="text-slate-500 text-[11px]">Ortak skorlar korunur</span>
+                    <span class="text-slate-500 text-[11px]">En yüksek skorlar listelenir</span>
                     <button onclick="closeLeaderboardModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg border border-slate-700 transition-colors">
                         Kapat
                     </button>
@@ -1128,9 +1193,19 @@
         function startGame(mode) {
             const nameInput = document.getElementById('playerNameInput');
             const nameErr = document.getElementById('nameErrorMsg');
+            const nameErrText = document.getElementById('nameErrorMsgText');
             playerName = nameInput.value.trim();
 
             if (!playerName) {
+                nameErrText.innerText = "Lütfen yarışmaya başlamadan önce buraya isminizi yazınız.";
+                nameErr.classList.remove('hidden');
+                nameInput.classList.add('border-rose-500');
+                return;
+            }
+
+            // Günlük 3 Tur Sınırı Kontrolü
+            if (getTodayPlayCount() >= MAX_DAILY_PLAY_LIMIT) {
+                nameErrText.innerText = "Günlük maksimum oyun oynama hakkınıza (3/3) ulaştınız. Yarın tekrar bekleriz!";
                 nameErr.classList.remove('hidden');
                 nameInput.classList.add('border-rose-500');
                 return;
@@ -1138,6 +1213,9 @@
 
             nameErr.classList.add('hidden');
             nameInput.classList.remove('border-rose-500');
+
+            // Yeni oyun başlatıldığında günlük oynama sayısını artır
+            incrementTodayPlayCount();
 
             currentGameMode = mode;
             currentQuestionIndex = 0;
@@ -1434,6 +1512,7 @@
 
         function resetToHome() {
             stopTimer();
+            updateDailyRightsUI();
             document.getElementById('gameplayScreen').classList.add('hidden');
             document.getElementById('resultScreen').classList.add('hidden');
             document.getElementById('welcomeScreen').classList.remove('hidden');
